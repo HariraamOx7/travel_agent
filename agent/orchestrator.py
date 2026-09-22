@@ -4,6 +4,9 @@ import time
 from typing import Optional
 
 from agent import nlu
+from agent.cache import ResponseCache
+from agent.router import ToolCallRouter
+from agent.tool_router import ToolRouter
 from openai import OpenAI, APIStatusError, APIConnectionError
 from groq import Groq
 
@@ -34,7 +37,14 @@ class Orchestrator:
       - local   : http://localhost:11434/v1        (Ollama, OpenAI SDK)
     """
 
-    def __init__(self, state: TripState, api_key: str | None = None):
+    def __init__(
+        self,
+        state: TripState,
+        api_key: str | None = None,
+        history: Optional[list[dict]] = None,
+        trace: Optional[list[dict]] = None,
+        client_messages: Optional[list[dict]] = None,
+    ):
         self.provider = os.environ.get("LLM_PROVIDER", "groq").lower()
 
         if self.provider == "groq":
@@ -116,8 +126,20 @@ class Orchestrator:
             "get_recommendations": tools.get_recommendations,
             "estimate_budget": tools.estimate_budget,
         }
-        self.history: list[dict] = [{"role": "system", "content": ""}]
-        self.trace: list[dict] = []
+        self.cache = ResponseCache(maxsize=100)
+        self.router = ToolCallRouter()
+        self.tool_router = ToolRouter(self.tool_impls)
+        self.history: list[dict] = history or [{"role": "system", "content": ""}]
+        self.trace: list[dict] = trace or []
+        self.client_messages: list[dict] = client_messages or []
+        if not history and self.client_messages:
+            for m in self.client_messages:
+                if m.get("role") in ("user", "assistant") and m.get("content"):
+                    self.history.append({"role": m["role"], "content": m["content"]})
+        elif not self.client_messages and len(self.history) > 1:
+            for m in self.history:
+                if m.get("role") in ("user", "assistant") and m.get("content"):
+                    self.client_messages.append({"role": m["role"], "content": m["content"]})
 
     # ------------------------------------------------------------------ #
     # Prompt construction
@@ -207,7 +229,21 @@ class Orchestrator:
     # ------------------------------------------------------------------ #
 
     def chat(self, user_text: str) -> str:
-        # --- NLU pre-processing (deterministic, no LLM) -----------------
+        # --- 1. State-aware response cache check ------------------------
+        cached = self.cache.get(user_text, self.state)
+        if cached is not None:
+            self.trace.append({"type": "cache_hit", "text": user_text})
+            self.history.append({"role": "user", "content": user_text})
+            self.history.append({"role": "assistant", "content": cached})
+            self.client_messages.append({"role": "user", "content": user_text})
+            self.client_messages.append({
+                "role": "assistant",
+                "content": cached,
+                "routing": {"target": "nlp", "confidence": 1.0, "latency_ms": 0.2, "reasons": ["cache:hit"]},
+            })
+            return cached
+
+        # --- 2. NLU pre-processing (deterministic, no LLM) --------------
         result = nlu.understand(user_text, state=self.state)
 
         # Apply any NER-extracted slots immediately. The LLM will still see
@@ -224,20 +260,53 @@ class Orchestrator:
             })
 
         self.history.append({"role": "user", "content": user_text})
+        self.client_messages.append({"role": "user", "content": user_text})
 
-        # --- Short-circuit high-confidence, unambiguous intents --------
-        shortcut = self._try_shortcut(user_text, result)
-        if shortcut is not None:
-            self.trace.append({
-                "type": "shortcut",
-                "intent": result.intent,
-                "source": result.source,
-                "confidence": round(result.confidence, 3),
-            })
-            self.history.append({"role": "assistant", "content": shortcut})
-            return shortcut
+        # --- 3. In-Between Model: Semantic & Hybrid Routing Decision ---
+        decision = self.router.decide(user_text, result, self.state)
+        self.trace.append({
+            "type": "router_decision",
+            "target": decision.target,
+            "confidence": decision.confidence,
+            "nlp_score": decision.nlp_score,
+            "llm_score": decision.llm_score,
+            "reasons": decision.reasons,
+            "latency_ms": decision.latency_ms,
+            "suggested_tool": decision.suggested_tool,
+        })
 
-        # --- Otherwise: normal ReAct loop ------------------------------
+        if decision.target == "nlp":
+            handled, reply, tool_called, tool_res = self.tool_router.route_and_execute(
+                user_text, result, self.state
+            )
+            if handled and reply is not None:
+                self.trace.append({
+                    "type": "nlp_tool_router",
+                    "engine": "nlp",
+                    "intent": result.intent,
+                    "source": result.source,
+                    "confidence": round(result.confidence, 3),
+                    "tool_called": tool_called,
+                    "tool_result": tool_res,
+                })
+                activity_entry = self._activity_trace(tool_called, tool_res)
+                if activity_entry:
+                    self.trace.append(activity_entry)
+                self.history.append({"role": "assistant", "content": reply})
+                self.client_messages.append({
+                    "role": "assistant",
+                    "content": reply,
+                    "routing": decision.to_dict() if decision else None,
+                })
+                self.cache.set(user_text, self.state, reply)
+                return reply
+            else:
+                self.trace.append({
+                    "type": "router_escalation",
+                    "reason": "NLP engine could not handle turn, escalating to LLM",
+                })
+
+        # --- 4. LLM Tool Engine (ReAct loop) ----------------------------
         for _ in range(MAX_TOOL_ROUNDS):
             resp = self._chat_with_retry()
             choice = resp.choices[0]
@@ -251,9 +320,6 @@ class Orchestrator:
                 )
 
             # Build the assistant entry we push back into history.
-            # IMPORTANT: reasoning tokens (gpt-oss) are NOT echoed back —
-            # only `content` and `tool_calls`. Echoing reasoning breaks
-            # subsequent turns on some providers.
             entry: dict = {"role": "assistant", "content": msg.content}
             if msg.tool_calls:
                 entry["tool_calls"] = [
@@ -273,6 +339,12 @@ class Orchestrator:
             if not msg.tool_calls:
                 final = msg.content or ""
                 self.trace.append({"type": "final_answer", "text": final})
+                self.client_messages.append({
+                    "role": "assistant",
+                    "content": final,
+                    "routing": decision.to_dict() if decision else {"target": "llm"},
+                })
+                self.cache.set(user_text, self.state, final)
                 return final
 
             # ACT + OBSERVE — one role="tool" message per tool_call_id.
@@ -304,6 +376,9 @@ class Orchestrator:
                         "result": result,
                     }
                 )
+                activity_entry = self._activity_trace(name, result)
+                if activity_entry:
+                    self.trace.append(activity_entry)
                 self.history.append(
                     {
                         "role": "tool",
@@ -318,57 +393,38 @@ class Orchestrator:
     # Short-circuit helper (NLU-driven, no LLM call)
     # ------------------------------------------------------------------ #
 
-    def _try_shortcut(self, text: str, result: "nlu.NLUResult") -> Optional[str]:
-        """Return a reply string if the message can be handled without the LLM.
+    @staticmethod
+    def _activity_trace(tool_name: Optional[str], result) -> Optional[dict]:
+        """Trace entry for the activity classifier, when a tool ran it.
 
-        Only fires on high-confidence intents whose handling is deterministic.
-        Returning None means "hand off to the LLM".
+        The classifier decides what each stop's activity is and how long it
+        takes, so it is worth surfacing next to the router decision rather
+        than hiding inside a tool result. Returns None when the classifier
+        was not consulted (i.e. any tool other than build_itinerary).
         """
-        if not result.high_confidence:
+        if tool_name != "build_itinerary" or not isinstance(result, dict):
             return None
+        source = result.get("activity_source")
+        if source is None:
+            return None
+        return {
+            "type": "activity_classification",
+            "source": source,
+            "model": os.environ.get("GROQ_MODEL") if source == "llm" else None,
+            "stops": len((result.get("schedule") or [{}])[0].get("stops") or [])
+            if result.get("schedule") else 0,
+            "unverified_days": (
+                (result.get("validation") or {}).get("unverified_days") or []
+            ),
+            "note": ("LLM classified each stop's activity and effort"
+                     if source == "llm"
+                     else "classifier unavailable — conservative defaults"),
+        }
 
-        # --- greet -----------------------------------------------------
-        if result.intent == "greet":
-            return ("Hi! Tell me where you'd like to go, when, and who's "
-                    "coming — I'll build the trip from there.")
-
-        # --- confirm_destination ---------------------------------------
-        if (result.intent == "confirm_destination"
-                and self.state.destination_candidates):
-            res = tools.confirm_destination({"choice": text.strip()}, self.state)
-            if "error" in res:
-                return None  # not a clean match — let the LLM sort it out
-
-            name = res["confirmed"]["name"]
-            if not self.state.missing_required():
-                self.state.stage = "recommending"
-            missing = res.get("missing_required") or []
-            if missing:
-                return (f"Confirmed: {name}. "
-                        f"Next, could you tell me your {missing[0]}?")
-            return f"Confirmed: {name}. Want me to pull up recommendations?"
-
-
-        if result.intent == "build_itinerary":
-            if not self.state.recommendations:
-                return None  # let the LLM explain what's still missing
-            res = tools.build_itinerary({}, self.state)
-            if "error" in res:
-                return None
-            return "Updated the schedule — see the Itinerary tab."
-
-        # --- ask_budget (optional) ----------------------------------------
-        if result.intent == "ask_budget":
-            if not self.state.itinerary:
-                return None
-            res = tools.estimate_budget({}, self.state)
-            if "error" in res:
-                return None
-            return f"Estimated total: ₹{res['total_inr']:,} — {res['verdict']}."
-
-        
-
-        return None
+    def _try_shortcut(self, text: str, result: "nlu.NLUResult") -> Optional[str]:
+        """Backward-compatible helper delegated to ToolRouter."""
+        handled, reply, _, _ = self.tool_router.route_and_execute(text, result, self.state)
+        return reply if handled else None
 
     # ------------------------------------------------------------------ #
     # Debug helper

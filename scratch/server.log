@@ -1,0 +1,112 @@
+INFO:     Started server process [28116]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8101 (Press CTRL+C to quit)
+INFO:     127.0.0.1:56940 - "GET /docs HTTP/1.1" 200 OK
+[model] groq:openai/gpt-oss-120b
+[warn] could not list Groq models: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+INFO:     127.0.0.1:56943 - "POST /api/sessions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56945 - "POST /api/sessions/3f879fea/chat HTTP/1.1" 200 OK
+  [overpass] maps.mail.ru -> HTTP 504 after 2.5s
+  [overpass] overpass.private.coffee -> ReadTimeout after 31.4s
+  [overpass] overpass.kumi.systems -> ReadTimeout after 32.3s
+  [overpass] racing failed, falling back to serial
+  [overpass/serial] asking maps.mail.ru (attempt 1/2)...
+  [overpass/serial] maps.mail.ru -> ReadTimeout after 30.9s: HTTPSConnectionPool(host='maps.mail.ru', port=443): Read timed out. (read timeout=30)
+  [overpass/serial] asking overpass.kumi.systems (attempt 1/2)...
+  [overpass/serial] overpass.kumi.systems -> ReadTimeout after 31.0s: HTTPSConnectionPool(host='overpass.kumi.systems', port=443): Read timed out. (read timeout=30)
+  [overpass/serial] asking overpass.private.coffee (attempt 1/2)...
+  [overpass/serial] overpass.private.coffee -> ReadTimeout after 30.7s: HTTPSConnectionPool(host='overpass.private.coffee', port=443): Read timed out. (read timeout=30)
+  [overpass/serial] all mirrors failed on attempt 1, waiting 10s before retry...
+  [overpass/serial] asking maps.mail.ru (attempt 2/2)...
+  [overpass/serial] maps.mail.ru -> OK in 14.5s (209 POIs), saved to cache
+  [overpass] cache hit (no server call needed)
+  [overpass] maps.mail.ru -> OK in 14.4s (116 POIs)
+  [overpass] overpass.kumi.systems -> ReadTimeout after 30.8s
+  [overpass] overpass.private.coffee -> ReadTimeout after 30.9s
+  [overpass] saved 116 POIs to cache
+  [ola] road distance 83.9 km
+  [ola/elevation] HTTP 400
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] OK 7×7 in 0.8s (with durations)
+  [ola/matrix] cache hit (7×7)
+CP-SAT failed (INFEASIBLE), using greedy fallback
+  [ola/elevation] OK 20 points in 0.7s
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] OK 4×4 in 0.5s (with durations)
+  [ola/matrix] cache hit (4×4)
+INFO:     127.0.0.1:18367 - "POST /api/sessions/3f879fea/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22534 - "GET /api/sessions/3f879fea HTTP/1.1" 200 OK
+  [overpass] cache hit (no server call needed)
+  [overpass] cache hit (no server call needed)
+  [ola/elevation] HTTP 400
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (7×7)
+  [ola/matrix] cache hit (7×7)
+CP-SAT failed (INFEASIBLE), using greedy fallback
+  [ola/elevation] cache hit (20 points)
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (4×4)
+  [ola/matrix] cache hit (4×4)
+INFO:     127.0.0.1:22535 - "POST /api/sessions/3f879fea/ideas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25967 - "GET /api/sessions/3f879fea HTTP/1.1" 200 OK
+  [overpass] cache hit (no server call needed)
+  [overpass] cache hit (no server call needed)
+  [ola/elevation] HTTP 400
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (7×7)
+  [ola/matrix] cache hit (7×7)
+CP-SAT failed (INFEASIBLE), using greedy fallback
+  [ola/elevation] cache hit (20 points)
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (4×4)
+  [ola/matrix] cache hit (4×4)
+INFO:     127.0.0.1:25969 - "POST /api/sessions/3f879fea/ideas HTTP/1.1" 200 OK
+  [overpass] cache hit (no server call needed)
+  [overpass] cache hit (no server call needed)
+  [ola/elevation] HTTP 400
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (7×7)
+  [ola/matrix] cache hit (7×7)
+CP-SAT failed (INFEASIBLE), using greedy fallback
+  [ola/elevation] cache hit (20 points)
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (4×4)
+  [ola/matrix] cache hit (4×4)
+INFO:     127.0.0.1:25975 - "POST /api/sessions/3f879fea/ideas HTTP/1.1" 200 OK
+  [overpass] cache hit (no server call needed)
+  [overpass] cache hit (no server call needed)
+  [ola/elevation] HTTP 400
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (7×7)
+  [ola/matrix] cache hit (7×7)
+CP-SAT failed (INFEASIBLE), using greedy fallback
+  [ola/elevation] cache hit (20 points)
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (4×4)
+  [ola/matrix] cache hit (4×4)
+INFO:     127.0.0.1:48215 - "POST /api/sessions/3f879fea/ideas HTTP/1.1" 200 OK
+  [overpass] cache hit (no server call needed)
+  [overpass] cache hit (no server call needed)
+  [ola/elevation] HTTP 400
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] OK 7×7 in 1.0s (with durations)
+  [ola/matrix] cache hit (7×7)
+CP-SAT failed (INFEASIBLE), using greedy fallback
+  [ola/elevation] cache hit (20 points)
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (4×4)
+  [ola/matrix] cache hit (4×4)
+INFO:     127.0.0.1:50104 - "POST /api/sessions/3f879fea/ideas HTTP/1.1" 200 OK
+  [overpass] cache hit (no server call needed)
+  [overpass] cache hit (no server call needed)
+  [ola/elevation] HTTP 400
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (7×7)
+  [ola/matrix] cache hit (7×7)
+CP-SAT failed (INFEASIBLE), using greedy fallback
+  [ola/elevation] cache hit (20 points)
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (4×4)
+  [ola/matrix] cache hit (4×4)
+INFO:     127.0.0.1:50111 - "POST /api/sessions/3f879fea/ideas HTTP/1.1" 200 OK

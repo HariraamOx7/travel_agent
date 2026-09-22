@@ -11,10 +11,10 @@ start.bat
 ```
 
 This will automatically:
-1. Free ports `8000` and `5173` if occupied by stale processes.
+1. Free ports `8100` and `5173` if occupied by stale processes.
 2. Locate the Python virtual environment (`server\.venv`).
 3. Check and install frontend dependencies if needed (`web\node_modules`).
-4. Start the **FastAPI backend** on `http://127.0.0.1:8000`.
+4. Start the **FastAPI backend** on `http://127.0.0.1:8100`.
 5. Start the **React + Vite frontend** on `http://localhost:5173`.
 6. Open your default web browser directly to `http://localhost:5173`.
 
@@ -24,5 +24,5 @@ This will automatically:
 ```
 
 ### Stopping the Services
-Double-click or run [stop.bat](file:///d:/ACADEMICS/Semester_5/AINLP/Project/travel-agent%20-%20working-react/stop.bat) to instantly terminate all backend and frontend services on ports 8000 and 5173.
+Double-click or run [stop.bat](file:///d:/ACADEMICS/Semester_5/AINLP/Project/travel-agent%20-%20working-react/stop.bat) to instantly terminate all backend and frontend services on ports 8100 and 5173.
 

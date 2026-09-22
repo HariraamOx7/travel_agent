@@ -35,6 +35,7 @@ INTENTS = [
     "ask_budget",
     "confirm_destination",
     "ask_transport",
+    "ask_weather",
     "greet",
     "other",
 ]
@@ -181,12 +182,27 @@ TRAINING_DATA = [
     ("hey", "greet"),
 
     # ------------------------------------------------------------------ #
+    # ask_weather — user wants weather or climate info
+    # ------------------------------------------------------------------ #
+    ("what's the weather", "ask_weather"),
+    ("what is the weather like", "ask_weather"),
+    ("how is the weather in Ooty", "ask_weather"),
+    ("is it going to rain", "ask_weather"),
+    ("weather forecast for the trip", "ask_weather"),
+    ("will it be cold", "ask_weather"),
+    ("what's the climate like", "ask_weather"),
+    ("temperature in Munnar", "ask_weather"),
+    ("will it rain next week", "ask_weather"),
+    ("show me the weather forecast", "ask_weather"),
+    ("how is the climate", "ask_weather"),
+    ("weather outlook", "ask_weather"),
+
+    # ------------------------------------------------------------------ #
     # other — acknowledgements and misc
     # ------------------------------------------------------------------ #
     ("thanks", "other"),
     ("ok", "other"),
     ("cool", "other"),
-    ("what's the weather", "other"),
     ("hmm", "other"),
     ("sounds good", "other"),
     ("got it", "other"),

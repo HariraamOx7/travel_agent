@@ -8,8 +8,8 @@ echo               TRAVEL AGENT - AUTO STARTER
 echo ================================================================
 echo.
 
-:: 1. Free ports 8000 and 5173 if already occupied from previous runs
-echo [*] Checking and freeing ports 8000 and 5173...
+:: 1. Free ports 8100 and 5173 if already occupied from previous runs
+echo [*] Checking and freeing ports 8100 and 5173...
 if exist "%~dp0free_ports.ps1" (
     powershell -ExecutionPolicy Bypass -File "%~dp0free_ports.ps1"
 )
@@ -68,9 +68,9 @@ echo.
 echo [*] Launching FastAPI Backend...
 start "Travel Agent - Backend" "%~dp0run_backend.bat"
 
-:: 6. Wait until backend is responding on port 8000
+:: 6. Wait until backend is responding on port 8100
 if exist "%~dp0wait_for_backend.ps1" (
-    powershell -ExecutionPolicy Bypass -File "%~dp0wait_for_backend.ps1" -Port 8000 -TimeoutSeconds 15
+    powershell -ExecutionPolicy Bypass -File "%~dp0wait_for_backend.ps1" -Port 8100 -TimeoutSeconds 15
 ) else (
     ping -n 5 127.0.0.1 >nul
 )
@@ -90,8 +90,8 @@ echo ================================================================
 echo               TRAVEL AGENT IS RUNNING!
 echo ================================================================
 echo   - Web App UI:       http://localhost:5173
-echo   - FastAPI Backend:  http://127.0.0.1:8000
-echo   - Interactive Docs: http://127.0.0.1:8000/docs
+echo   - FastAPI Backend:  http://127.0.0.1:8100
+echo   - Interactive Docs: http://127.0.0.1:8100/docs
 echo.
 echo Backend and Frontend are running in separate terminal windows.
 echo ================================================================
@@ -111,7 +111,7 @@ if "%choice%"=="1" (
     goto menu
 )
 if "%choice%"=="2" (
-    start http://127.0.0.1:8000/docs
+    start http://127.0.0.1:8100/docs
     goto menu
 )
 if "%choice%"=="3" (

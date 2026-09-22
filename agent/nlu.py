@@ -30,7 +30,7 @@ class NLUResult:
         return any(
             k in self.slots for k in
             ("origin", "destination_raw", "start_date", "end_date",
-             "budget_total", "travellers", "travel_mode")
+             "budget_total", "travellers", "travel_mode", "adventure_level")
         )
 
 

@@ -11,6 +11,7 @@ Design invariants (from the design plan):
 """
 import json
 import math
+import re
 import time
 from datetime import date, timedelta
 
@@ -93,30 +94,94 @@ def extract_trip_slots(args: dict, state: TripState) -> dict:
         else:
             state.origin = val
             applied.append("origin")
+            if not state.origin_coords:
+                try:
+                    rec = geo.geocode(val)
+                    if rec and "lat" in rec and rec.get("lat") is not None:
+                        state.origin_coords = {"lat": rec["lat"], "lng": rec["lng"]}
+                except Exception:
+                    pass
 
     # --- destination ---------------------------------------------------- #
+    destinations_list = list(args.get("destinations_list") or [])
     if "destination_raw" in args and args["destination_raw"]:
         raw = str(args["destination_raw"]).strip()
-        is_vague = bool(args.get("destination_is_vague"))
+        is_vague = bool(args.get("destination_is_vague")) or any(
+            v in raw.lower() for v in ["hill station", "hillstation", "hills", "beach", "beaches", "anywhere", "somewhere"]
+        )
         if is_vague:
-            if _already_set(state, "pending_destination_query", raw):
+            clean_query = "hill station" if any(h in raw.lower() for h in ["hill", "mountain"]) else (
+                "beach" if any(b in raw.lower() for b in ["beach", "coast"]) else "destinations"
+            )
+            if _already_set(state, "pending_destination_query", clean_query):
                 skipped.append("pending_destination_query")
             else:
-                state.pending_destination_query = raw
+                state.pending_destination_query = clean_query
                 state.destination_candidates = []
+                state.destinations = []
                 applied.append("pending_destination_query")
+        elif destinations_list or ("," in raw or re.search(r"\b(and|&)\b", raw, re.I)):
+            if not destinations_list:
+                parts = [re.sub(r"^(?:and|&)\s+", "", p.strip(), flags=re.I).strip()
+                         for p in re.split(r",|\b(?:and|&)\b", raw, flags=re.I)]
+                destinations_list = [p.title() for p in parts if p and p.lower() not in {"the", "a", "an"}]
+            if len(destinations_list) > 1:
+                dests = []
+                for d_name in destinations_list:
+                    try:
+                        rec = geo.geocode(d_name)
+                    except Exception:
+                        rec = None
+                    if rec and "lat" in rec and rec.get("lat") is not None:
+                        dests.append(Destination(
+                            name=rec.get("name") or d_name,
+                            place_id=rec.get("place_id"),
+                            lat=rec["lat"],
+                            lng=rec["lng"],
+                        ))
+                    else:
+                        dests.append(Destination(name=d_name))
+                state.destinations = dests
+                state.destination_candidates = []
+                state.pending_destination_query = None
+                applied.append(f"destinations({', '.join(d.name for d in dests)})")
+            elif destinations_list:
+                d_name = destinations_list[0]
+                try:
+                    rec = geo.geocode(d_name)
+                except Exception:
+                    rec = None
+                if rec and "lat" in rec and rec.get("lat") is not None:
+                    state.destinations = [Destination(
+                        name=rec.get("name") or d_name,
+                        place_id=rec.get("place_id"),
+                        lat=rec["lat"],
+                        lng=rec["lng"],
+                    )]
+                else:
+                    state.destinations = [Destination(name=d_name)]
+                state.destination_candidates = []
+                state.pending_destination_query = None
+                applied.append(f"destinations({state.destinations[0].name})")
         else:
-            # Specific name: only re-write the candidate stub if it
-            # differs from what's already there.
-            current = state.destination_candidates
-            if (len(current) == 1
-                    and current[0].name.lower() == raw.lower()):
-                skipped.append(f"destination_candidates(name={raw})")
+            # Specific destination name (e.g. "Munnar", "Goa")
+            # Geocode and set directly in state.destinations so it is confirmed immediately
+            try:
+                rec = geo.geocode(raw)
+            except Exception:
+                rec = None
+            if rec and "lat" in rec and rec.get("lat") is not None:
+                state.destinations = [Destination(
+                    name=rec.get("name") or raw.title(),
+                    place_id=rec.get("place_id"),
+                    lat=rec["lat"],
+                    lng=rec["lng"],
+                )]
             else:
-                state.destination_candidates = [
-                    DestinationCandidate(name=raw)
-                ]
-                applied.append(f"destination_candidates(name={raw})")
+                state.destinations = [Destination(name=raw.title())]
+            state.destination_candidates = []
+            state.pending_destination_query = None
+            applied.append(f"destinations({state.destinations[0].name})")
 
     # --- dates ---------------------------------------------------------- #
     for key in ("start_date", "end_date"):
@@ -194,6 +259,30 @@ def extract_trip_slots(args: dict, state: TripState) -> dict:
             state.pace = p
             applied.append("pace")
 
+    # --- adventure level (optional) ------------------------------------- #
+    # How trek-heavy the trip should be; drives the scheduler's trek cap.
+    if "adventure_level" in args and args["adventure_level"]:
+        lvl = str(args["adventure_level"]).lower()
+        if lvl not in {"low", "balanced", "high"}:
+            rejected.append(f"adventure_level={args['adventure_level']!r}")
+        elif _already_set(state, "adventure_level", lvl):
+            skipped.append("adventure_level")
+        else:
+            state.adventure_level = lvl
+            applied.append("adventure_level")
+
+    # --- destination category (optional) --------------------------------- #
+    # Category of a vague destination ("hill station", "beach", ...).
+    if "destination_category" in args and args["destination_category"]:
+        cat = str(args["destination_category"]).lower().strip()
+        if not re.fullmatch(r"[a-z_]{2,30}", cat):
+            rejected.append(f"destination_category={args['destination_category']!r}")
+        elif _already_set(state, "destination_category", cat):
+            skipped.append("destination_category")
+        else:
+            state.destination_category = cat
+            applied.append("destination_category")
+
     # --- travel mode ---------------------------------------------------- #
     if "travel_mode" in args and args["travel_mode"]:
         m = str(args["travel_mode"]).lower()
@@ -244,6 +333,8 @@ def search_destination_candidates(args: dict, state: TripState) -> dict:
     hints: list[str] = []
     if state.pending_destination_query:
         hints.extend(state.pending_destination_query.lower().split())
+    if getattr(state, "destination_category", None):
+        hints.append(state.destination_category.replace("_", " "))
     if state.interests:
         hints.extend(i.lower() for i in state.interests)
 
@@ -296,6 +387,10 @@ def search_destination_candidates(args: dict, state: TripState) -> dict:
                     (c["distance_km"] for c in raw if c["name"] == v.name),
                     None,
                 ),
+                "road_distance_km": next(
+                    (c.get("road_distance_km") for c in raw if c["name"] == v.name),
+                    None,
+                ),
             }
             for v in verified
         ],
@@ -307,11 +402,18 @@ def search_destination_candidates(args: dict, state: TripState) -> dict:
             "origin for each. Ask the user to pick one by number."
         ),
     }
-
 def confirm_destination(args: dict, state: TripState) -> dict:
-    """Lock in the user's pick from state.destination_candidates.
+    """Lock in the user's pick(s) from state.destination_candidates.
 
-    Accepts either a 1-based index ('2') or a name substring ('Ooty').
+    Accepts:
+      - A single index ('2')
+      - A single name ('Ooty')
+      - A comma/and-joined list of the above ('1 and 5', 'Ooty, Munnar')
+      - Ordinals ('first', 'last') are handled upstream by _normalize_choice.
+
+    Multi-select adds ALL named destinations to state.destinations. The
+    scheduler currently plans for destinations[0] — a multi-city itinerary
+    is a future extension.
     """
     if not state.destination_candidates:
         return {"error": "no candidates pending — call search_destination_candidates first"}
@@ -320,51 +422,84 @@ def confirm_destination(args: dict, state: TripState) -> dict:
     if not choice:
         return {"error": "choice is required"}
 
-    picked: DestinationCandidate | None = None
+    # Split "1 and 5" / "1, 5" / "1 & 5" into ["1", "5"].
+    # re.split with capture keeps only the tokens between separators.
+    raw_tokens = re.split(r"\s*(?:,|and|&)\s*", choice, flags=re.I)
+    tokens = [t.strip() for t in raw_tokens if t and t.strip()]
+    if not tokens:
+        tokens = [choice]
 
-    if choice.isdigit():
-        idx = int(choice) - 1
-        if 0 <= idx < len(state.destination_candidates):
-            picked = state.destination_candidates[idx]
-    else:
-        needle = choice.lower()
-        for c in state.destination_candidates:
-            if needle in c.name.lower():
-                picked = c
-                break
+    picked: list[DestinationCandidate] = []
+    unmatched: list[str] = []
+    already_picked: set[str] = set()
 
-    if picked is None:
+    for token in tokens:
+        cand = None
+
+        # Numeric index — 1-based.
+        if token.isdigit():
+            idx = int(token) - 1
+            if 0 <= idx < len(state.destination_candidates):
+                cand = state.destination_candidates[idx]
+
+        # Name substring match.
+        if cand is None:
+            needle = token.lower()
+            for c in state.destination_candidates:
+                if needle in c.name.lower():
+                    cand = c
+                    break
+
+        if cand is None:
+            unmatched.append(token)
+            continue
+
+        if cand.name in already_picked:
+            continue
+        already_picked.add(cand.name)
+        picked.append(cand)
+
+    if not picked:
         return {
-            "error": f"could not match choice {choice!r}",
+            "error": f"could not match any of {tokens!r}",
             "available": [c.name for c in state.destination_candidates],
+            "unmatched": unmatched,
         }
 
-    if picked.lat is None or picked.lng is None:
-        return {"error": f"candidate {picked.name!r} has no coordinates"}
+    # Coordinate check across all picks.
+    missing_coords = [c.name for c in picked if c.lat is None or c.lng is None]
+    if missing_coords:
+        return {"error": f"candidate(s) missing coordinates: {missing_coords}"}
 
-    state.destinations = [Destination(
-        name=picked.name,
-        place_id=picked.place_id,
-        lat=picked.lat,
-        lng=picked.lng,
-    )]
-    state.destination_candidates = []           # clear the pending list
+    state.destinations = [
+        Destination(
+            name=c.name,
+            place_id=c.place_id,
+            lat=c.lat,
+            lng=c.lng,
+        )
+        for c in picked
+    ]
+    state.destination_candidates = []
     state.pending_destination_query = None
+    state.candidate_offset = 0          # <-- add this
 
-    return {
-        "confirmed": {
-            "name": picked.name,
-            "lat": picked.lat,
-            "lng": picked.lng,
-            "place_id": picked.place_id,
-        },
+    result = {
+        "confirmed": [
+            {"name": d.name, "lat": d.lat, "lng": d.lng, "place_id": d.place_id}
+            for d in state.destinations
+        ],
         "missing_required": state.missing_required(),
         "instruction": (
-            "Confirm to the user in one short sentence, then ask the next "
-            "missing required slot (if any)."
+            "Confirm the pick(s) to the user in one short sentence, then "
+            "ask the next missing required slot (if any). If more than "
+            "one destination was confirmed, mention that the schedule "
+            "will focus on the first for now."
         ),
     }
-
+    if unmatched:
+        result["unmatched"] = unmatched
+    return result
 
 # --------------------------------------------------------------------------- #
 # Weather
@@ -503,20 +638,23 @@ def get_recommendations(args: dict, state: TripState) -> dict:
         return pois
 
     # Rank every category by the explainable score, then dedupe.
-        # Rank every category by the visibility score, then dedupe.
     for cat, items in pois.items():
         items.sort(key=lambda p: _score(p, d.lat, d.lng), reverse=True)
         pois[cat] = _dedupe(items)
 
     attrs_all = pois["attraction"]
-    top_picks = attrs_all[:6]
+    # The full ranked pool feeds the Ideas tab (the user browses and edits
+    # it); the scheduler applies its own cap of min(12, n_days*3) so the
+    # solver stays small regardless of how wide this is.
+    attrs_pool = attrs_all[:30]
+    top_picks = attrs_pool[:6]
     top_names = {p["name"] for p in top_picks}
 
-    remainder = [p for p in attrs_all if p["name"] not in top_names]
+    remainder = [p for p in attrs_pool if p["name"] not in top_names]
     remainder.sort(key=lambda p: _hidden_score(p, d.lat, d.lng), reverse=True)
     hidden_gems = remainder[:5]
 
-    attrs = top_picks + hidden_gems        # scheduler input
+    attrs = attrs_pool                  # scheduler input = full browsable pool
     food = pois["food"][:12]
     stay_raw = pois["stay"][:8]
 
@@ -574,16 +712,272 @@ def get_recommendations(args: dict, state: TripState) -> dict:
             "estimated nightly rate, rating label, and meal plan — use the exact "
             "labels from the tool result, never invent ratings or prices. "
             "One weather line stating live forecast or climatology. "
-            "Only describe a food venue's cuisine if `cuisine` is non-null. "
+            "List food venues by name regardless of cuisine. Only mention cuisine "
+            "type when `cuisine` is non-null; otherwise present them as "
+            "'popular dining spots' with no cuisine claim. "
             "Offer to build the day-by-day schedule next."
         ),
     }
 
+# --------------------------------------------------------------------------- #
+# Multi-destination scheduling
+# --------------------------------------------------------------------------- #
+
+def _split_days(n_days: int, weights: list[int]) -> list[int]:
+    """Allocate n_days across destinations proportional to `weights`,
+    every destination getting at least one day. Deterministic."""
+    n = len(weights)
+    total = sum(weights) or n
+    alloc = [max(1, round(n_days * w / total)) for w in weights]
+    # Fix rounding so the allocation sums exactly to n_days.
+    while sum(alloc) > n_days and max(alloc) > 1:
+        i = max(range(n), key=lambda k: (alloc[k], -k))
+        alloc[i] -= 1
+    while sum(alloc) < n_days:
+        i = max(range(n), key=lambda k: (weights[k], alloc[k], -k))
+        alloc[i] += 1
+    return alloc
+
+
+def _build_multi_destination(state: TripState, merged: list[str]) -> dict:
+    """Schedule a trip that visits several destinations.
+
+    Each destination gets a share of the trip's days proportional to the
+    size of its attraction pool (at least one day each), then the single-
+    destination scheduler runs once per destination with that destination
+    as the hotel anchor. Days are stitched in date order with an explicit
+    transfer leg where the traveller moves between destinations.
+    """
+    from agent import ola_elevation
+    from agent import activities as activities_mod
+    from agent import ola_routing
+
+    dests = [d for d in state.destinations if d.lat is not None]
+    if len(dests) < 2:
+        return {"error": "multi-destination scheduling needs at least two "
+                          "geocoded destinations"}
+    if state.n_days < len(dests):
+        return {"error": (f"{len(dests)} destinations need at least "
+                          f"{len(dests)} days — add a day or drop one")}
+
+    # --- POI pools per destination --------------------------------------
+    pools = []
+    for d in dests:
+        pois = pois_mod.search_pois(d.lat, d.lng)
+        if "error" in pois:
+            pools.append((d, [], []))
+            continue
+        pools.append((d, pois.get("attraction", [])[:30],
+                      pois.get("food", [])[:12]))
+
+    # --- Day split ------------------------------------------------------
+    weights = [max(len(attrs), 4) for (_, attrs, _) in pools]
+    alloc = _split_days(state.n_days, weights)
+
+    # --- Weather per destination (whole date range) ---------------------
+    rain_by_dest = []
+    for (d, _, _) in pools:
+        w = weather.trip_weather(d.lat, d.lng, state.start_date, state.end_date)
+        by_date = {row["date"]: row.get("precip_mm", 0) or 0
+                   for row in w.get("days", [])}
+        rain_by_dest.append(by_date)
+
+    # --- Transfer legs between consecutive destinations -----------------
+    def _leg_km(a, b):
+        try:
+            from agent.transport import _road_distance_km
+            km = _road_distance_km((a.lat, a.lng), (b.lat, b.lng), a.name, b.name)
+            if km and km > 0:
+                return km
+        except Exception:
+            pass
+        return _haversine_km(a.lat, a.lng, b.lat, b.lng) * 1.3
+
+    transfers = []
+    for i in range(1, len(dests)):
+        km = round(_leg_km(dests[i - 1], dests[i]), 1)
+        transfers.append({"from": dests[i - 1].name, "to": dests[i].name,
+                          "km": km, "hours": round(km / 35.0, 1)})
+
+    # --- Shared distance factory (one Ola client, all destinations) -----
+    def distance_factory(coords):
+        try:
+            return ola_routing.batch_matrix(coords)
+        except Exception:
+            return None
+
+    # --- Per-destination scheduling -------------------------------------
+    all_days = []
+    unscheduled = []
+    validation = {"trek_rule_ok": True, "overloaded_days": [],
+                  "unverified_days": []}
+    statuses = []
+    adventure_level = getattr(state, "adventure_level", "balanced")
+    trek_cap = 0
+    offset = 0
+    allocation = []
+
+    for i, (d, attrs, food) in enumerate(pools):
+        n_d = alloc[i]
+        allocation.append({"destination": d.name, "days": n_d})
+        start_i = state.start_date + timedelta(days=offset)
+        rain = [rain_by_dest[i].get(
+                    (start_i + timedelta(days=k)).isoformat(), 0.0)
+                for k in range(n_d)]
+
+        if not attrs:
+            for k in range(n_d):
+                all_days.append({
+                    "date": (start_i + timedelta(days=k)).isoformat(),
+                    "destination": d.name,
+                    "rest_day": True, "stops": [], "lunch": None,
+                    "lunch_time": None, "lunch_place": None, "lunch_min": None,
+                    "expected_rain_mm": round(rain[k], 1),
+                    "start_time": "08:30", "end_time": "08:30",
+                    "start_min": 510, "end_min": 510,
+                    "total_travel_min": 0, "total_visit_min": 0,
+                    "effort_min": 0, "effort_cap_min": 0, "trek_count": 0,
+                    "class_mix": [], "overloaded": False, "unverified": True,
+                })
+            unscheduled.append({
+                "name": d.name,
+                "reason": "no attraction POIs found here — days kept free",
+            })
+        else:
+            # Elevation for this destination's pool (drives trek evidence).
+            with_coords = [a for a in attrs if a.get("lat") is not None]
+            elevations = None
+            base_elevation = None
+            if with_coords:
+                try:
+                    coords = ([(d.lat, d.lng)]
+                              + [(a["lat"], a["lng"]) for a in with_coords])
+                    vals = ola_elevation.batch_elevation(coords)
+                    if vals is not None and len(vals) == len(coords):
+                        base_elevation = vals[0]
+                        elevations = vals[1:]
+                except Exception:
+                    elevations = None
+            enriched = []
+            for a in attrs:
+                item = dict(a)
+                if elevations is not None and a.get("lat") is not None:
+                    try:
+                        idx = with_coords.index(a)
+                        item["elevation_m"] = elevations[idx]
+                        if base_elevation is not None:
+                            item["ascent_m"] = (int(elevations[idx])
+                                                - int(base_elevation))
+                    except ValueError:
+                        pass
+                enriched.append(item)
+
+            pool_items = [{"name": a["name"], "kind": a.get("kind"),
+                           "elevation_m": a.get("elevation_m"),
+                           "ascent_m": a.get("ascent_m")}
+                          for a in enriched]
+            activity_map = activities_mod.classify_pool(pool_items,
+                                                        pace=state.pace)
+
+            res = scheduler_mod.build_itinerary(
+                enriched, food, d.lat, d.lng,
+                start_i, n_d, rain, state.pace,
+                exclude_names=merged,
+                distance_factory=distance_factory,
+                activities=activity_map,
+                adventure_level=adventure_level,
+            )
+            if "error" in res:
+                return res
+            statuses.append(res.get("solver_status", "?"))
+            trek_cap = max(trek_cap, res.get("trek_cap", 0))
+            v = res.get("validation") or {}
+            if not v.get("trek_rule_ok", True):
+                validation["trek_rule_ok"] = False
+            validation["overloaded_days"] += v.get("overloaded_days", [])
+            validation["unverified_days"] += v.get("unverified_days", [])
+            for m in res.get("unscheduled", []):
+                unscheduled.append(m)
+            for day in res.get("days", []):
+                day["destination"] = d.name
+                # The first day of a destination (except the first overall)
+                # carries the transfer in from the previous one.
+                if all_days and "transfer_in" not in day and i > 0 \
+                        and day is res["days"][0]:
+                    day["transfer_in"] = transfers[i - 1]
+                all_days.append(day)
+        offset += n_d
+
+    state.itinerary = {
+        "days": all_days,
+        "unscheduled": unscheduled,
+        "solver_status": "+".join(statuses) or "MULTI",
+        "validation": validation,
+        "adventure_level": adventure_level,
+        "trek_cap": trek_cap,
+        "multi_destination": True,
+        "allocation": allocation,
+    }
+    state.stage = "scheduling"
+
+    schedule = []
+    for idx, day in enumerate(all_days, start=1):
+        stops = day.get("stops", [])
+        schedule.append({
+            "day": idx,
+            "date": day["date"],
+            "destination": day.get("destination"),
+            "transfer_in": day.get("transfer_in"),
+            "start": day.get("start_time"),
+            "end": day.get("end_time"),
+            "stops": [s["name"] for s in stops],
+            "km_total": round(sum(s.get("km_from_prev", 0) for s in stops), 1),
+            "lunch": day.get("lunch"),
+            "lunch_time": day.get("lunch_time"),
+            "effort_min": day.get("effort_min"),
+            "trek_count": day.get("trek_count"),
+            "class_mix": day.get("class_mix"),
+            "rain_mm": day.get("expected_rain_mm"),
+            "rest_day": day.get("rest_day", False),
+            "overloaded": day.get("overloaded", False),
+        })
+
+    return {
+        "schedule": schedule,
+        "unscheduled": unscheduled,
+        "unscheduled_names": [m["name"] if isinstance(m, dict) else m
+                              for m in unscheduled],
+        "excluded": merged,
+        "solver_status": state.itinerary["solver_status"],
+        "validation": validation,
+        "adventure_level": adventure_level,
+        "trek_cap": trek_cap,
+        "multi_destination": True,
+        "allocation": allocation,
+        "transfers": transfers,
+        "instruction": (
+            "This is a MULTI-DESTINATION trip. Present the day split first "
+            "(e.g. 'Munnar 2 days · Thekkady 1 day'), then each day exactly "
+            "as given: destination, date, start/end time, stops IN ORDER "
+            "with arrive/depart times, activity labels, lunch and rain. "
+            "Where a day has transfer_in, open it with the transfer leg "
+            "(km and hours). Use exact names from the tool result — never "
+            "invent stops or prices. Mention each day's class_mix so the "
+            "variety is visible. The user can change the split by chat."
+        ),
+    }
+
+
 def build_itinerary(args: dict, state: TripState) -> dict:
+    """Build the day-by-day schedule from stored recommendations.
+
+    Distances between stops go through a distance factory: Ola Maps'
+    Distance Matrix API provides real road distances when available;
+    otherwise the scheduler falls back to haversine × 1.4 (a documented
+    hill-station road approximation). The factory returns None on any
+    failure, and the scheduler handles that transparently.
+    """
     rec = state.recommendations or {}
-    attrs = rec.get("attractions") or []
-    if not attrs:
-        return {"error": "no recommendations yet — call get_recommendations first"}
     if not (state.destinations and state.start_date and state.n_days):
         return {"error": "destination and dates required"}
 
@@ -594,6 +988,16 @@ def build_itinerary(args: dict, state: TripState) -> dict:
     new_excludes = args.get("exclude_names") or []
     merged = sorted(set(state.excluded_names) | set(new_excludes))
     state.excluded_names = merged
+
+    # Multi-destination: several confirmed destinations each get a share
+    # of the days and are scheduled independently, then stitched together.
+    geocoded = [d for d in state.destinations if d.lat is not None]
+    if len(geocoded) > 1:
+        return _build_multi_destination(state, merged)
+
+    attrs = rec.get("attractions") or []
+    if not attrs:
+        return {"error": "no recommendations yet — call get_recommendations first"}
 
     d = state.destinations[0]
     rain_by_date = {w["date"]: w.get("precip_mm", 0) or 0
@@ -616,36 +1020,179 @@ def build_itinerary(args: dict, state: TripState) -> dict:
                       f"for the extended date range, then retry build_itinerary."),
         }
 
+    # --- Elevation --------------------------------------------------------
+    # Two jobs: evidence for the activity classifier, and the
+    # LLM-independent signal that decides "this is a trek" (a measured
+    # ascent of 400 m+) when the model is unreachable. Soft dependency:
+    # without it the classifier simply has less to go on.
+    from agent import ola_elevation
+
+    with_coords = [a for a in attrs if a.get("lat") is not None]
+    base_elevation = None
+    elevations = None
+    if with_coords:
+        try:
+            coords_for_elev = ([(d.lat, d.lng)]
+                               + [(a["lat"], a["lng"]) for a in with_coords])
+            vals = ola_elevation.batch_elevation(coords_for_elev)
+            if vals is not None and len(vals) == len(coords_for_elev):
+                base_elevation = vals[0]
+                elevations = vals[1:]
+        except Exception as e:
+            print(f"  [build_itinerary] elevation unavailable "
+                  f"({type(e).__name__}: {e})", flush=True)
+
+    enriched = []
+    for a in attrs:
+        item = dict(a)
+        if elevations is not None and a.get("lat") is not None:
+            try:
+                idx = with_coords.index(a)
+            except ValueError:
+                idx = -1
+            if 0 <= idx < len(elevations):
+                item["elevation_m"] = elevations[idx]
+                if base_elevation is not None:
+                    item["ascent_m"] = int(elevations[idx]) - int(base_elevation)
+        enriched.append(item)
+
+    # --- Activity classification -----------------------------------------
+    # ONE batched LLM call for the whole pool, cached by (kind, name, pace).
+    # The model decides what the activity is and how long it takes; the
+    # scheduler decides whether it fits. Never raises — unclassifiable
+    # stops fall back to a conservative default marked source="default".
+    from agent import activities as activities_mod
+
+    pool_items = [
+        {
+            "name": a["name"],
+            "kind": a.get("kind"),
+            "elevation_m": a.get("elevation_m"),
+            "ascent_m": a.get("ascent_m"),
+        }
+        for a in enriched
+    ]
+    activity_map = activities_mod.classify_pool(pool_items, pace=state.pace)
+
+    # --- Distance factory -------------------------------------------------
+    # Called once per build with [(hotel_lat, hotel_lng), (stop1_lat, ...),
+    # ...]. Returns (distances_km, durations_min): the API hands back both
+    # in one response, so real travel times cost nothing extra. None means
+    # haversine × 1.4 at the documented fallback speed.
+    from agent import ola_routing
+
+    def distance_factory(coords: list[tuple[float, float]]):
+        try:
+            matrix = ola_routing.batch_matrix(coords)
+        except Exception as e:
+            print(f"  [build_itinerary] distance factory raised "
+                  f"{type(e).__name__}: {e}", flush=True)
+            return None
+        if matrix is None:
+            print("  [build_itinerary] Ola matrix unavailable — "
+                  "falling back to haversine × 1.4", flush=True)
+        return matrix
+
+    # --- Run the scheduler ------------------------------------------------
     result = scheduler_mod.build_itinerary(
-        attrs, rec.get("food") or [], d.lat, d.lng,
-        state.start_date, state.n_days, rain, state.pace,
-        exclude_names=merged)
+        enriched,
+        rec.get("food") or [],
+        d.lat, d.lng,
+        state.start_date,
+        state.n_days,
+        rain,
+        state.pace,
+        exclude_names=merged,
+        distance_factory=distance_factory,
+        activities=activity_map,
+        adventure_level=getattr(state, "adventure_level", "balanced"),
+    )
     if "error" in result:
         return result
 
     state.itinerary = result
     state.stage = "scheduling"
+
+    # --- Return payload for the router / LLM ------------------------------
+    # The instruction block is what tells the LLM how to present the
+    # schedule. It must never invent stop names or lunch picks — it reads
+    # them verbatim from this payload.
+    # Every decision the schedule made for the traveller is in here: what
+    # the activity is, when they arrive and leave, how much walking a day
+    # holds, and why anything is missing.
+    schedule = []
+    for idx, day in enumerate(result["days"], start=1):
+        stops = day.get("stops", [])
+        schedule.append({
+            "day": idx,
+            "date": day["date"],
+            "start": day.get("start_time"),
+            "end": day.get("end_time"),
+            "stops": [
+                {
+                    "name": s["name"],
+                    "activity": s["activity"],
+                    "arrive": s["arrive"],
+                    "depart": s["depart"],
+                    "visit_min": s["visit_min"],
+                    "travel_min": s["travel_min"],
+                    "km_from_prev": s["km_from_prev"],
+                    "intensity": s["intensity"],
+                    "is_trek": s["is_trek"],
+                    "note": s["note"],
+                }
+                for s in stops
+            ],
+            "km_total": round(sum(s["km_from_prev"] for s in stops), 1),
+            "lunch": day.get("lunch"),
+            "lunch_time": day.get("lunch_time"),
+            "effort_min": day.get("effort_min"),
+            "effort_cap_min": day.get("effort_cap_min"),
+            "travel_min": day.get("total_travel_min"),
+            "trek_count": day.get("trek_count"),
+            "class_mix": day.get("class_mix"),
+            "rain_mm": day.get("expected_rain_mm"),
+            "rest_day": day.get("rest_day", False),
+            "overloaded": day.get("overloaded", False),
+            "unverified": day.get("unverified", False),
+        })
+
+    missing = result.get("unscheduled") or []
+    missing_names = [m["name"] if isinstance(m, dict) else m
+                     for m in missing]
+
     return {
-        "schedule": [
-            {"date": day["date"],
-             "stops": [s["name"] for s in day["stops"]],
-             "km_total": round(sum(s["km_from_prev"] for s in day["stops"]), 1),
-             "lunch": day["lunch"],
-             "rain_mm": day["expected_rain_mm"],
-             "rest_day": day.get("rest_day", False)}
-            for day in result["days"]
-        ],
-        "unscheduled": result["unscheduled"],
+        "schedule": schedule,
+        "unscheduled": missing,
+        "unscheduled_names": missing_names,
         "excluded": merged,
         "solver_status": result["solver_status"],
+        "activity_source": result.get("activity_source", "llm"),
+        "validation": result.get("validation"),
+        "adventure_level": result.get("adventure_level"),
+        "trek_cap": result.get("trek_cap"),
         "instruction": (
-            "Present each day exactly as given: date, stops in order, "
-            "total km, lunch, expected rain. Use the exact stop names and "
-            "exact `lunch` value from the tool result — never invent or "
-            "substitute names. If a day has rest_day=true, present it as "
-            "'Rest day' with no stops and no lunch line. If `excluded` is "
-            "non-empty, mention in one sentence which stops are currently "
-            "removed."
+            "Present each day exactly as given: date, start and end time, "
+            "stops IN ORDER with their arrive/depart times, the activity "
+            "label, total km, lunch (with its time), and expected rain. "
+            "Use the exact stop names, activity labels and `lunch` value "
+            "from the tool result — never invent or substitute names, "
+            "never invent prices or durations. "
+            "The trip mixes activity types on purpose: mention each day's "
+            "class_mix (e.g. trek + viewpoint + food) so the user sees the "
+            "variety, not just the climbs. Trek frequency follows the "
+            "user's adventure_level: 'low' spreads treks out, 'balanced' "
+            "is one every couple of days, 'high' allows one per day. If "
+            "the user asks for more treks than the level allows, explain "
+            "the tradeoff and offer to raise the level or add days. "
+            "If a day has rest_day=true, present it as 'Rest day'. "
+            "If a day has overloaded=true, say plainly that it is a long "
+            "day. If a day has unverified=true, state that the effort of "
+            "its stops could not be assessed, so it may be ambitious. "
+            "If `unscheduled` is non-empty, name each stop that was left "
+            "out and give the reason attached to it, in one sentence per "
+            "stop. If `excluded` is non-empty, mention which stops are "
+            "currently removed."
         ),
     }
 from agent import budget as budget_mod

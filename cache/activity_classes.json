@@ -1,0 +1,90 @@
+{
+ "peak|chokramudi|balanced": {
+  "activity": "Trek to Chokramudi peak",
+  "class": "trek",
+  "intensity": 5,
+  "note": "655\u202fm ascent",
+  "source": "llm",
+  "visit_min": 170
+ },
+ "peak|devi malai|balanced": {
+  "activity": "Trek to Devi Malai peak",
+  "class": "trek",
+  "intensity": 5,
+  "note": "677\u202fm ascent",
+  "source": "llm",
+  "visit_min": 180
+ },
+ "peak|kanni mala|balanced": {
+  "activity": "Trek to Kanni Mala summit",
+  "class": "trek",
+  "intensity": 5,
+  "note": "808\u202fm ascent",
+  "source": "llm",
+  "visit_min": 180
+ },
+ "peak|naikolli mala|balanced": {
+  "activity": "Trek to Naikolli Mala summit",
+  "class": "trek",
+  "intensity": 5,
+  "note": "886\u202fm ascent",
+  "source": "llm",
+  "visit_min": 200
+ },
+ "peak|umaya mala|balanced": {
+  "activity": "Trek to Umaya Mala summit",
+  "class": "trek",
+  "intensity": 5,
+  "note": "915\u202fm ascent",
+  "source": "llm",
+  "visit_min": 210
+ },
+ "viewpoint|circular tea plantations|balanced": {
+  "activity": "Circular Tea Plantations walk",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "119\u202fm ascent",
+  "source": "llm",
+  "visit_min": 45
+ },
+ "viewpoint|hill top view point|balanced": {
+  "activity": "Hill Top View Point stop",
+  "class": "sightsee",
+  "intensity": 3,
+  "note": "272\u202fm climb, near trek threshold",
+  "source": "llm",
+  "visit_min": 45
+ },
+ "viewpoint|pothamedu|balanced": {
+  "activity": "Viewpoint stop at Pothamedu",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "Gentle 22\u202fm climb",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|sunset deck|balanced": {
+  "activity": "Sunset Deck viewing",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "Descend 86\u202fm",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|sunset point|balanced": {
+  "activity": "Sunset point viewing",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "Descend 288\u202fm",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|tea paddies|balanced": {
+  "activity": "Tea paddies viewpoint walk",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "136\u202fm ascent",
+  "source": "llm",
+  "visit_min": 40
+ }
+}

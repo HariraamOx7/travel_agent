@@ -1,0 +1,42 @@
+INFO:     Started server process [32972]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8100 (Press CTRL+C to quit)
+INFO:     127.0.0.1:49374 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:1340 - "GET /api/sessions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:1341 - "GET /api/sessions HTTP/1.1" 200 OK
+[model] groq:openai/gpt-oss-120b
+[warn] could not list Groq models: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+INFO:     127.0.0.1:15115 - "GET /api/sessions/3f879fea HTTP/1.1" 200 OK
+INFO:     127.0.0.1:15118 - "GET /api/sessions/3f879fea HTTP/1.1" 200 OK
+INFO:     127.0.0.1:15120 - "GET /api/sessions/3f879fea/map HTTP/1.1" 200 OK
+INFO:     127.0.0.1:15122 - "GET /api/sessions/3f879fea/map HTTP/1.1" 200 OK
+  [overpass] cache hit (no server call needed)
+  [overpass] cache hit (no server call needed)
+  [ola] road distance 83.9 km
+  [ola/elevation] HTTP 400
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (7×7)
+  [ola/matrix] cache hit (7×7)
+CP-SAT failed (INFEASIBLE), using greedy fallback
+  [ola/elevation] cache hit (20 points)
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (4×4)
+  [ola/matrix] cache hit (4×4)
+INFO:     127.0.0.1:8692 - "POST /api/sessions/3f879fea/ideas HTTP/1.1" 200 OK
+  [overpass] cache hit (no server call needed)
+  [overpass] cache hit (no server call needed)
+  [ola/elevation] HTTP 400
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (7×7)
+  [ola/matrix] cache hit (7×7)
+CP-SAT failed (INFEASIBLE), using greedy fallback
+  [ola/elevation] cache hit (20 points)
+  [llm] completion failed: AuthenticationError: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}
+  [ola/matrix] cache hit (4×4)
+  [ola/matrix] cache hit (4×4)
+INFO:     127.0.0.1:21300 - "POST /api/sessions/3f879fea/ideas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32792 - "GET /api/sessions/3f879fea HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32793 - "GET /api/sessions/3f879fea HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32794 - "GET /api/sessions/3f879fea/map HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32795 - "GET /api/sessions/3f879fea/map HTTP/1.1" 200 OK

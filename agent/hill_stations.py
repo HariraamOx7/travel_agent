@@ -39,7 +39,7 @@ HILL_STATIONS = [
     # Andhra Pradesh / Telangana
     ("Horsley Hills",         "Andhra",     13.6579, 78.4078, 1265),
     ("Araku Valley",          "Andhra",     18.3273, 82.8753, 911),
-    ("Lambasingi",            "Andhra",     17.8000, 82.4833, 1000),
+    ("Lambasingi",            "Andhra",     17.8100, 82.4833, 1000),
 ]
 
 

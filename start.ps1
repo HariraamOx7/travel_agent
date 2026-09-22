@@ -12,8 +12,8 @@ Write-Host "               TRAVEL AGENT - AUTO STARTER" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# 1. Release ports 8000 and 5173 if already occupied
-Write-Host "[*] Checking and freeing ports 8000 and 5173..." -ForegroundColor Gray
+# 1. Release ports 8100 and 5173 if already occupied
+Write-Host "[*] Checking and freeing ports 8100 and 5173..." -ForegroundColor Gray
 if (Test-Path "$ScriptDir\free_ports.ps1") {
     & "$ScriptDir\free_ports.ps1"
 }
@@ -39,9 +39,9 @@ Write-Host ""
 Write-Host "[*] Launching FastAPI Backend..." -ForegroundColor Cyan
 Start-Process -FilePath "$ScriptDir\run_backend.bat" -WindowStyle Normal
 
-# 5. Wait for backend to be ready on port 8000
+# 5. Wait for backend to be ready on port 8100
 if (Test-Path "$ScriptDir\wait_for_backend.ps1") {
-    & "$ScriptDir\wait_for_backend.ps1" -Port 8000 -TimeoutSeconds 15
+    & "$ScriptDir\wait_for_backend.ps1" -Port 8100 -TimeoutSeconds 15
 } else {
     Start-Sleep -Seconds 4
 }
@@ -60,7 +60,7 @@ Write-Host "================================================================" -F
 Write-Host "               TRAVEL AGENT IS RUNNING!" -ForegroundColor Green
 Write-Host "================================================================" -ForegroundColor Green
 Write-Host "  - Web App UI:      http://localhost:5173" -ForegroundColor White
-Write-Host "  - FastAPI Backend:  http://127.0.0.1:8000" -ForegroundColor White
-Write-Host "  - Interactive Docs: http://127.0.0.1:8000/docs" -ForegroundColor White
+Write-Host "  - FastAPI Backend:  http://127.0.0.1:8100" -ForegroundColor White
+Write-Host "  - Interactive Docs: http://127.0.0.1:8100/docs" -ForegroundColor White
 Write-Host "================================================================" -ForegroundColor Green
 Write-Host ""

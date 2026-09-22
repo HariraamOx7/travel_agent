@@ -1,6 +1,6 @@
-# Releases ports 8000 (FastAPI) and 5173 (Vite) if currently in use
+# Releases ports 8100 (FastAPI) and 5173 (Vite) if currently in use
 param(
-    [int[]]$Ports = @(8000, 5173)
+    [int[]]$Ports = @(8100, 5173)
 )
 
 $stoppedCount = 0

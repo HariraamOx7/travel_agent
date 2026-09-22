@@ -30,6 +30,13 @@ export const api = {
 
   getMap: (sid) => jsonFetch(`${BASE}/sessions/${sid}/map`),
 
+  editIdeas: (sid, exclude, include) =>
+    jsonFetch(`${BASE}/sessions/${sid}/ideas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ exclude, include }),
+    }),
+
   deleteTrip: (sid) =>
     jsonFetch(`${BASE}/sessions/${sid}`, {
       method: 'DELETE',

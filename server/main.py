@@ -15,7 +15,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from agent.db import delete_state, load_state, save_state, list_sessions
+from agent.db import (
+    delete_state,
+    load_state,
+    save_state,
+    list_sessions,
+    load_session,
+    save_session,
+)
 from agent.orchestrator import Orchestrator
 from agent.state import TripState
 from agent.discovery import _haversine_km
@@ -42,8 +49,12 @@ _sessions: dict[str, Orchestrator] = {}
 
 def _get_orch(session_id: str) -> Orchestrator:
     if session_id not in _sessions:
-        state = load_state(session_id) or TripState()
-        _sessions[session_id] = Orchestrator(state)
+        state, messages, trace = load_session(session_id)
+        _sessions[session_id] = Orchestrator(
+            state or TripState(),
+            client_messages=messages,
+            trace=trace,
+        )
     return _sessions[session_id]
 
 
@@ -52,16 +63,21 @@ def _get_orch(session_id: str) -> Orchestrator:
 # --------------------------------------------------------------------------- #
 
 class CreateTripIn(BaseModel):
-    origin: str
-    destination: str
-    start_date: str          # ISO YYYY-MM-DD
-    end_date: str
+    origin: Optional[str] = None
+    destination: Optional[str] = None
+    start_date: Optional[str] = None          # ISO YYYY-MM-DD
+    end_date: Optional[str] = None
     travellers: int = 1
     budget_total: Optional[float] = None
 
 
 class ChatIn(BaseModel):
     message: str
+
+
+class IdeasIn(BaseModel):
+    exclude: list[str] = []
+    include: list[str] = []
 
 
 # --------------------------------------------------------------------------- #
@@ -79,21 +95,40 @@ def sessions():
 
 
 @app.post("/api/sessions")
-def create_session(body: CreateTripIn):
+def create_session(body: Optional[CreateTripIn] = None):
     from datetime import date as _date
 
     sid = uuid.uuid4().hex[:8]
-    state = TripState(
-        origin=body.origin.strip(),
-        start_date=_date.fromisoformat(body.start_date),
-        end_date=_date.fromisoformat(body.end_date),
-        travellers=body.travellers,
-        budget_total=body.budget_total,
-    )
+    state = TripState()
+    if body:
+        if body.origin:
+            state.origin = body.origin.strip()
+        if body.start_date:
+            try:
+                state.start_date = _date.fromisoformat(body.start_date)
+            except (ValueError, TypeError):
+                pass
+        if body.end_date:
+            try:
+                state.end_date = _date.fromisoformat(body.end_date)
+            except (ValueError, TypeError):
+                pass
+        if body.travellers:
+            state.travellers = body.travellers
+        if body.budget_total is not None:
+            state.budget_total = body.budget_total
+        if body.destination:
+            from agent.state import DestinationCandidate
+            state.destination_candidates = [DestinationCandidate(name=body.destination.strip())]
+
     orch = Orchestrator(state)
     _sessions[sid] = orch
-    save_state(sid, state)
-    return {"session_id": sid, "state": state.model_dump(mode="json")}
+    save_session(sid, state, orch.client_messages, orch.trace)
+    return {
+        "session_id": sid,
+        "state": state.model_dump(mode="json"),
+        "messages": orch.client_messages,
+    }
 
 
 @app.get("/api/sessions/{sid}")
@@ -103,6 +138,7 @@ def get_session(sid: str):
         "session_id": sid,
         "state": orch.state.model_dump(mode="json"),
         "trace": orch.trace,
+        "messages": orch.client_messages,
     }
 
 
@@ -114,11 +150,52 @@ def chat(sid: str, body: ChatIn):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
 
-    save_state(sid, orch.state)
+    save_session(sid, orch.state, orch.client_messages, orch.trace)
+    latest_routing = next(
+        (t for t in reversed(orch.trace) if t.get("type") == "router_decision"),
+        None,
+    )
     return {
         "reply": reply,
         "state": orch.state.model_dump(mode="json"),
         "trace": orch.trace,
+        "messages": orch.client_messages,
+        "routing": latest_routing,
+    }
+
+
+@app.post("/api/sessions/{sid}/ideas")
+def edit_ideas(sid: str, body: IdeasIn):
+    """User-driven idea edits: remove attractions (or bring them back) and
+    rebuild the itinerary against the same state. One round trip keeps the
+    chat, map and itinerary in sync because everything reads the same state."""
+    orch = _get_orch(sid)
+    s = orch.state
+    if not s.itinerary:
+        raise HTTPException(
+            status_code=400,
+            detail="no itinerary yet — build one first (ask the agent to plan the days)",
+        )
+
+    from agent import tools as tools_mod
+
+    excluded = {n.lower() for n in s.excluded_names}
+    for name in body.exclude:
+        excluded.add(name.lower())
+    for name in body.include:
+        excluded.discard(name.lower())
+    s.excluded_names = sorted(excluded)
+
+    result = tools_mod.build_itinerary({}, s)
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+
+    save_session(sid, s, orch.client_messages, orch.trace)
+    return {
+        "state": s.model_dump(mode="json"),
+        "schedule": result.get("schedule"),
+        "unscheduled": result.get("unscheduled"),
+        "excluded": result.get("excluded"),
     }
 
 
@@ -196,6 +273,7 @@ def delete_session(sid: str):
 
 
 # Serve the built React app in production.
-# In development, Vite serves it on :5173 and proxies /api to :8000.
+# In development, Vite serves it on :5173 and proxies /api to :8100.
 if os.path.isdir("web/dist"):
     app.mount("/", StaticFiles(directory="web/dist", html=True), name="web")
+

@@ -18,6 +18,8 @@ class DestinationCandidate(BaseModel):
     reviews: Optional[int] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
+    distance_km: Optional[float] = None
+    road_distance_km: Optional[float] = None
 
 
 class TripState(BaseModel):
@@ -35,12 +37,21 @@ class TripState(BaseModel):
     travellers: int = 1
     interests: List[str] = Field(default_factory=list)
     pace: str = "balanced"          # relaxed | balanced | packed
+    # How trek-heavy the trip should be: low (~1 trek per 3 days),
+    # balanced (~1 per 2), high (up to one per day). Drives the trek cap
+    # in the scheduler, so a 'balanced' trip stays a MIX of activities
+    # instead of turning every day into a summit day.
+    adventure_level: str = "balanced"   # low | balanced | high
     travel_mode: Optional[str] = None        # flight | train | bus | car | bike
     origin_coords: Optional[dict] = None     # {"lat": float, "lng": float}
 
     # Pipeline
+    # Category of a vague destination query ("hill station", "beach",
+    # "temple town"). Feeds the curated destinations-DB fast path.
+    destination_category: Optional[str] = None
     pending_destination_query: Optional[str] = None
     destination_candidates: List[DestinationCandidate] = Field(default_factory=list)   # vague input — Phase 2 resolves it
+    candidate_offset: int = 0
     recommendations: Optional[dict] = None
     itinerary: Optional[dict] = None
     excluded_names: List[str] = Field(default_factory=list)

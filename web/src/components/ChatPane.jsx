@@ -36,8 +36,20 @@ export default function ChatPane({ messages, onSend, busy }) {
                 : 'bg-bg border border-border rounded-lg p-3 mr-8'
             }
           >
-            <div className="text-xs text-muted mb-1">
-              {m.role === 'user' ? 'You' : 'Agent'}
+            <div className="flex items-center justify-between text-xs text-muted mb-1">
+              <span>{m.role === 'user' ? 'You' : 'Agent'}</span>
+              {m.routing && (
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-medium ${
+                    m.routing.target === 'nlp'
+                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
+                      : 'bg-purple-500/15 text-purple-400 border border-purple-500/25'
+                  }`}
+                >
+                  {m.routing.target === 'nlp' ? '⚡ NLP Router' : '🧠 LLM Engine'}
+                  {m.routing.latency_ms ? ` · ${m.routing.latency_ms}ms` : ''}
+                </span>
+              )}
             </div>
             <div className="whitespace-pre-wrap text-sm">{m.content}</div>
           </div>

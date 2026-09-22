@@ -14,3 +14,45 @@ html, body, #root {
   background: #0e0e10;
   border-radius: 12px;
 }
+/* ------------------------------------------------------------------ */
+/* Unified scrollbar styling                                           */
+/* ------------------------------------------------------------------ */
+/* Applied globally so chat, trip tabs, and any future scrollable     */
+/* container share the same subtle look. On dark UI the default       */
+/* Chromium scrollbar is jarringly bright; this tones it down.        */
+/*                                                                     */
+/* Two syntaxes are needed:                                            */
+/*   - WebKit/Blink (Chrome, Edge, Safari): ::-webkit-scrollbar        */
+/*   - Firefox: scrollbar-width + scrollbar-color                      */
+/* ------------------------------------------------------------------ */
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3a3a3c transparent;
+}
+
+/* WebKit / Chromium / Edge / Safari */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #3a3a3c;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #5a5a5c;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}

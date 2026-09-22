@@ -28,6 +28,12 @@ EXTRACT_TRIP_SLOTS = _fn(
             "description": "How the traveler reaches the destination"},
         "travellers": {"type": "integer"},
         "interests": {"type": "array", "items": {"type": "string"}},
+        "adventure_level": {"type": "string",
+            "enum": ["low", "balanced", "high"],
+            "description": "How trek-heavy the trip should be: low (~1 trek per 3 days), balanced (~1 per 2 days), high (up to one trek every day)"},
+        "destination_category": {"type": "string",
+            "enum": ["hill_station", "beach", "waterfall", "backwater", "wildlife", "temple", "heritage", "desert", "lake", "trekking", "coffee", "cave", "offbeat"],
+            "description": "Category of a vague destination request ('a hill station', 'somewhere with beaches')"},
         "confidence_flags": {"type": "array", "items": {"type": "string"},
             "description": "Names of fields extracted with low confidence"},
     },
@@ -35,12 +41,19 @@ EXTRACT_TRIP_SLOTS = _fn(
 
 SEARCH_DESTINATION_CANDIDATES = _fn(
     "search_destination_candidates",
-    "Resolve a vague destination into verified candidates. Propose 4-6 specific, "
-    "well-known REAL place names fitting the user's request near the origin. "
-    "Each name is verified against OpenStreetMap; only real places are returned.",
+    "Resolve a vague destination into verified candidates. Do NOT propose "
+    "place names yourself - call this with the detected category and the tool "
+    "discovers real places near the origin by proximity. Pass the category "
+    "you detected ('hill_station', 'beach', 'temple', ...), or omit it for a "
+    "general search.",
     {"candidate_names": {"type": "array", "items": {"type": "string"},
-        "description": "e.g. ['Ooty', 'Kodaikanal', 'Yercaud', 'Munnar']"}},
-    required=["candidate_names"],
+        "description": "IGNORED by the tool - kept for backward compatibility"},
+     "category": {"type": "string",
+        "enum": ["hill_station", "beach", "waterfall", "backwater", "wildlife", "temple", "heritage", "desert", "lake", "trekking", "coffee", "cave", "offbeat"],
+        "description": "What kind of place the user asked for, when they used a category word"},
+     "radius_km": {"type": "integer",
+        "description": "Search radius in km (100-1000)"}},
+    required=[],
 )
 
 CONFIRM_DESTINATION = _fn(

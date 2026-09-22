@@ -584,14 +584,8 @@ def _score_candidate(name, fcode, distance_km, population, query_hints,
     )
 
     if wants_hills:
-        # Sweet spot: 200–450 km. Day trips too close, far stations
-        # too tiring. Both ends score lower.
-        if distance_km < 150:
-            score -= 2.0
-        elif distance_km <= 450:
-            score += 4.0 - abs(distance_km - 300) / 100.0
-        else:
-            score += max(0.0, 4.0 - (distance_km - 450) / 100.0)
+        # Closer stations score higher (especially for nearby hill station queries)
+        score += max(0.0, (500 - distance_km) / 50.0)
     else:
         if distance_km <= 600:
             score += (600 - distance_km) / 100.0
@@ -664,36 +658,46 @@ def discover_nearby(
     hint_blob = " ".join(query_hints)
 
     # ---------------------------------------------------------------- #
-    # Hill-station detection — covers multi-word and one-word forms
-    # ("hill station", "hillstation", "hills", "mountain", "giri", ...)
+    # Category detection — the curated fast path covers any recognized
+    # category (hill, beach, temple, wildlife, ...); Overpass remains the
+    # fallback for uncategorized or rare queries.
     # ---------------------------------------------------------------- #
-    hill_keywords = (
-        "hill", "hillstation", "hill-station", "hills",
-        "mountain", "mountain station", "giri", "malai",
-        "cool", "climate", "highland", "high range",
-    )
-    wants_hills = any(k in hint_blob for k in hill_keywords)
+    from agent.destinations_db import CATEGORY_ALIASES, DESTINATIONS
+
+    _known_categories = {c for e in DESTINATIONS
+                         for c in e.get("categories", [])}
+    category = None
+    for word in hint_blob.replace("-", " ").replace("_", " ").split():
+        canonical = CATEGORY_ALIASES.get(word) or (
+            word if word in _known_categories else None
+        )
+        if canonical:
+            category = canonical
+            break
+    wants_hills = category == "hill_station"
 
     # ---------------------------------------------------------------- #
-    # FAST PATH: curated hill stations
+    # FAST PATH: curated destinations DB (category-aware)
     # ---------------------------------------------------------------- #
-    if wants_hills:
-        from agent import hill_stations as hs
+    if category:
+        from agent import nearby_search as ns
 
-        candidates = hs.hill_stations_near(lat, lng, radius_km=radius_km)
+        candidates = ns.find_nearby_destinations(
+            lat, lng, category=category, radius_km=radius_km,
+        )
         print(
-            f"  [discovery] curated hill path: "
-            f"{len(candidates)} stations within {int(radius_km)} km",
+            f"  [discovery] curated '{category}' path: "
+            f"{len(candidates)} destinations within {int(radius_km)} km",
             flush=True,
         )
 
         if not candidates:
             return {
                 "error": (
-                    f"no hill stations found within {int(radius_km)} km "
-                    f"of ({lat:.2f}, {lng:.2f})"
+                    f"no {category.replace('_', ' ')} destinations found "
+                    f"within {int(radius_km)} km of ({lat:.2f}, {lng:.2f})"
                 ),
-                "sources": ["curated_hill_stations"],
+                "sources": ["curated_destinations_db"],
                 "search_radius_km": radius_km,
             }
 
@@ -708,23 +712,26 @@ def discover_nearby(
         except Exception as e:
             print(f"  [discovery] enrichment skipped: {e}", flush=True)
 
-        # Score and sort.
-        for c in candidates:
-            c["score"] = _score_candidate(
-                c["name"],
-                c.get("fcode", ""),
-                c["distance_km"],
-                c.get("population", 0),
-                query_hints,
-                elevation=c.get("elevation"),
-            )
-        candidates.sort(key=lambda c: c["score"], reverse=True)
+        # For hill stations, sort by proximity (closest stations first, e.g. Manjolai near Tirunelveli)
+        candidates.sort(key=lambda c: c["distance_km"])
+
+        # Enrich top candidates with real Ola Maps road distance if available
+        try:
+            from agent.transport import _ola_road_distance_km
+            for c in candidates[:8]:
+                road_km = _ola_road_distance_km((lat, lng), (c["lat"], c["lng"]))
+                if road_km is not None and road_km > 0:
+                    c["road_distance_km"] = road_km
+                    c["distance_km"] = road_km  # Use real road distance
+        except Exception as e:
+            print(f"  [discovery] Ola road distance query skipped: {e}", flush=True)
 
         trimmed = candidates[:max_results]
         return {
             "candidates": trimmed,
             "count": len(trimmed),
-            "sources": ["curated_hill_stations"],
+            "sources": ["curated_destinations_db"],
+            "category": category,
             "search_radius_km": radius_km,
         }
 
@@ -813,6 +820,8 @@ def to_destination_candidates(raw: list[dict],
             lat=c["lat"],
             lng=c["lng"],
             kind=c.get("fcode"),
+            distance_km=c.get("distance_km"),
+            road_distance_km=c.get("road_distance_km"),
             address=", ".join(
                 p for p in (c.get("admin"), c.get("country")) if p
             ) or None,

@@ -1,6 +1,6 @@
 # Waits until the backend server is accepting connections
 param(
-    [int]$Port = 8000,
+    [int]$Port = 8100,
     [int]$TimeoutSeconds = 15
 )
 
