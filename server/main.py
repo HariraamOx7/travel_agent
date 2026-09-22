@@ -80,6 +80,13 @@ class IdeasIn(BaseModel):
     include: list[str] = []
 
 
+class MoveStopIn(BaseModel):
+    stop_name: str
+    from_day: int                     # 0-based index into itinerary.days
+    to_day: int
+    to_index: Optional[int] = None    # position within the target day
+
+
 # --------------------------------------------------------------------------- #
 # Endpoints
 # --------------------------------------------------------------------------- #
@@ -197,6 +204,34 @@ def edit_ideas(sid: str, body: IdeasIn):
         "unscheduled": result.get("unscheduled"),
         "excluded": result.get("excluded"),
     }
+
+
+@app.post("/api/sessions/{sid}/itinerary/move")
+def move_stop(sid: str, body: MoveStopIn):
+    """Itinerary drag-and-drop: move one stop between days (or reorder it)
+    and re-time only the affected days. Instant and offline — no LLM and
+    no road-matrix call; the clock is rebuilt with the haversine fallback."""
+    orch = _get_orch(sid)
+    s = orch.state
+    if not s.itinerary:
+        raise HTTPException(
+            status_code=400,
+            detail="no itinerary yet — build one first", 
+        )
+
+    from agent import tools as tools_mod
+
+    result = tools_mod.move_stop({
+        "stop_name": body.stop_name,
+        "from_day": body.from_day,
+        "to_day": body.to_day,
+        "to_index": body.to_index,
+    }, s)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    save_session(sid, s, orch.client_messages, orch.trace)
+    return {"state": s.model_dump(mode="json"), "moved": result}
 
 
 @app.get("/api/sessions/{sid}/map")

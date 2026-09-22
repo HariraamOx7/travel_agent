@@ -84,6 +84,15 @@ _DAY_END_H = 19.0               # 19:00 envelope
 _LUNCH_WINDOW_START_H = 12.5    # insert lunch as the clock passes 12:30
 _LUNCH_DWELL_H = 0.75           # 45 minutes at the table
 
+# Breakfast and dinner. Breakfast opens _BREAKFAST_OFFSET_MIN before the
+# day's first leg (trek days start at 06:00, so never earlier than the
+# 04:30 floor); dinner is the evening meal back at the base.
+_BREAKFAST_OFFSET_MIN = 45
+_BREAKFAST_DWELL_MIN = 30
+_DINNER_START_MIN = 19 * 60 + 30   # 19:30
+_DINNER_DWELL_MIN = 60
+_EARLIEST_MEAL_MIN = 4 * 60 + 30   # 04:30
+
 # Daily on-foot effort budget (minutes), by the user's pace.
 _EFFORT_CAP_MIN = {"relaxed": 240, "balanced": 330, "packed": 420}
 
@@ -107,9 +116,21 @@ _W_SAME_CLASS = 1
 # is deliberately slower than the 30 km/h the old meal-timing estimate used.
 _FALLBACK_SPEED_KMPH = 25.0
 
-# Soft reward for keeping very close stops on the same day. Replaces the
-# DBSCAN cluster-assignment term without its failure mode.
-_COHESION_KM = 2.0
+# Day ordering above this many days uses the greedy chain instead of the
+# exact Held–Karp permutation (2^k · k² blows up past this point).
+_EXACT_ORDER_MAX_DAYS = 14
+
+# Soft reward for keeping close stops on the same day. Replaces the
+# DBSCAN cluster-assignment term without its failure mode. The reward is
+# graded: a pair within _TIGHT_KM is worth _COHESION_TIGHT, a pair within
+# _COHESION_KM is worth _COHESION_NEAR. Both must outgun the imbalance and
+# effort terms (3 and 1 per unit) or a tight pair loses to a tidy-looking
+# 2/2/2/2 load split even though splitting it costs the traveller a long
+# day-boundary jump.
+_TIGHT_KM = 2.0
+_COHESION_KM = 4.0
+_COHESION_TIGHT = 4
+_COHESION_NEAR = 2
 _W_COHESION = 1
 _W_EFFORT = 1                   # spread effort, not just stop counts
 
@@ -259,20 +280,28 @@ def _solve_assignment(attrs, n_days, target, max_load, rain_mm,
     ]
 
     # Pairwise terms, now over individual attractions rather than clusters.
+    # A close pair can carry BOTH a cohesion reward and a mild dispersion
+    # penalty (the 3–4 km band): the net still favours sharing a day,
+    # which is the "these two belong together" signal the itinerary needs.
     pair_cost: dict[tuple[int, int], int] = {}
     pair_forbidden: set[tuple[int, int]] = set()
-    close_pairs: list[tuple[int, int]] = []
+    close_pairs: list[tuple[int, int, int]] = []   # (i, j, reward)
     for i in range(n_attrs):
         for j in range(i + 1, n_attrs):
             d_ij = dm.between(i + 1, j + 1)
             if d_ij > _EXTREME_HARD_KM:
                 pair_forbidden.add((i, j))
-            elif d_ij > _VERY_FAR_KM:
+                continue
+            if d_ij > _VERY_FAR_KM:
                 pair_cost[(i, j)] = 5
             elif d_ij > _FAR_KM:
                 pair_cost[(i, j)] = 1
-            elif d_ij <= _COHESION_KM:
-                close_pairs.append((i, j))
+            if d_ij <= _COHESION_KM:
+                close_pairs.append(
+                    (i, j,
+                     _COHESION_TIGHT if d_ij <= _TIGHT_KM
+                     else _COHESION_NEAR)
+                )
 
     m = cp_model.CpModel()
     x = {(i, d): m.NewBoolVar(f"x_{i}_{d}")
@@ -325,17 +354,18 @@ def _solve_assignment(attrs, n_days, target, max_load, rain_mm,
             m.Add(b >= x[i, d] + x[j, d] - 1)
             dispersion_terms.append(weight * b)
 
-    # Soft cohesion: very close stops prefer the same day. This is what the
+    # Soft cohesion: close stops prefer the same day. This is what the
     # DBSCAN cluster term used to encode, without letting a cluster carry
-    # two peaks into one day.
+    # two peaks into one day. The reward is graded by distance so that a
+    # pair of POIs a valley apart still outweighs a load-balance nudge.
     cohesion_terms = []
-    for (i, j) in close_pairs:
+    for (i, j, reward) in close_pairs:
         for d in range(n_days):
             b = m.NewBoolVar(f"near_{i}_{j}_{d}")
             m.Add(b <= x[i, d])
             m.Add(b <= x[j, d])
             m.Add(b >= x[i, d] + x[j, d] - 1)
-            cohesion_terms.append(b)
+            cohesion_terms.append(reward * b)
 
     imbalance_terms = []
     for d in range(n_days):
@@ -475,74 +505,160 @@ def _greedy_assign(n_attrs, n_days, max_load, effort_min, is_trek,
 # Stage 3b — day ordering
 # --------------------------------------------------------------------------- #
 
-def _order_days_geographically(day_members, attrs, dm: _DistanceMatrix):
-    """Reorder day slots so consecutive days are geographically adjacent.
+def _order_days_geographically(day_members, attrs, dm: _DistanceMatrix,
+                               rain_mm=None):
+    """Choose the ORDER of days: an exact permutation over day groups.
 
-    Uses dm.from_hotel for the initial hop, and dm.between for day-to-day
-    transitions. Rest days (empty clusters) default to the hotel and end
-    up at the tail of the chain.
+    The cost of an ordering is
+
+        hotel → day_1 → day_2 → … → day_k     (chain distance, km)
+      + Σ_p rain[date p] × outdoor stops in the day placed at p
+
+    so consecutive days sit next to each other on the map AND the group
+    that lands on a wet date is the one that can best afford it. This
+    replaces a greedy chain whose hotel hop computed as 0 km for every
+    candidate — it therefore always opened with whatever group happened
+    to be index 0, often far from the base — and which threw away the
+    assignment stage's rain placement entirely.
+
+    Solved exactly with Held–Karp over days (2^k · k²); beyond
+    _EXACT_ORDER_MAX_DAYS it falls back to the same cost, greedily.
     """
-    if len(day_members) <= 1:
-        return list(day_members.keys())
+    keys = list(day_members.keys())
+    k = len(keys)
+    if k <= 1:
+        return keys
 
-    centroids = {}
-    for d, members in day_members.items():
+    hotel = dm._coords[0]
+
+    # Centroid per group — an empty (rest) day sits at the hotel. Plus the
+    # number of OUTDOOR stops per group: rain only moves sightseeing.
+    points: list[tuple[float, float]] = []
+    outdoor_n: list[int] = []
+    for key in keys:
+        members = day_members[key]
         if not members:
-            centroids[d] = None       # hotel
+            points.append(hotel)
+            outdoor_n.append(0)
             continue
         lats = [attrs[i]["lat"] for i in members]
         lngs = [attrs[i]["lng"] for i in members]
-        centroids[d] = (sum(lats) / len(lats), sum(lngs) / len(lngs))
+        points.append((sum(lats) / len(lats), sum(lngs) / len(lngs)))
+        outdoor_n.append(sum(
+            1 for i in members
+            if (attrs[i].get("kind") or "").lower() not in _INDOOR
+        ))
 
-    def dist_between(a, b) -> float:
-        if a is None and b is None:
-            return 0.0
-        if a is None:
-            return _haversine(0, 0, b[0], b[1])   # placeholder, replaced below
-        if b is None:
-            return _haversine(a[0], a[1], 0, 0)
-        return _haversine(a[0], a[1], b[0], b[1])
-
-    # We can't use dm directly because centroids aren't in the matrix.
-    # Use haversine × ROAD_FACTOR for centroids — accuracy matters less
-    # at the day-chaining scale than at the stop-sequencing scale.
-    def centroid_dist(a, b) -> float:
-        if a is None and b is None:
-            return 0.0
-        if a is None or b is None:
-            return 0.0     # hotel-to-first-day handled separately
+    def hop(a, b) -> float:
         return _haversine(a[0], a[1], b[0], b[1]) * _ROAD_FACTOR
 
-    unvisited = set(day_members.keys())
-    # Start at the hotel. Pick the nearest day's centroid.
-    current = None
-    order = []
-    while unvisited:
-        nxt = min(
-            unvisited,
-            key=lambda d: (centroid_dist(current, centroids[d]), d),
-        )
-        order.append(nxt)
-        unvisited.remove(nxt)
-        current = centroids[nxt]
-    return order
+    rain = list(rain_mm or [])
+
+    def rain_cost(g: int, pos: int) -> int:
+        if pos >= len(rain) or not rain[pos]:
+            return 0
+        return int(round(_W_RAIN * rain[pos])) * outdoor_n[g]
+
+    # Greedy fallback for very long trips: same cost, approximate chain.
+    if k > _EXACT_ORDER_MAX_DAYS:
+        remaining = set(range(k))
+        pos = 0
+        cur = hotel
+        seq: list[int] = []
+        while remaining:
+            nxt = min(
+                remaining,
+                key=lambda g: (hop(cur, points[g]) + rain_cost(g, pos), g),
+            )
+            seq.append(nxt)
+            remaining.discard(nxt)
+            cur = points[nxt]
+            pos += 1
+        return [keys[i] for i in seq]
+
+    d = [[0.0] * k for _ in range(k)]
+    for i in range(k):
+        for j in range(k):
+            if i != j:
+                d[i][j] = hop(points[i], points[j])
+    d_hotel = [hop(hotel, points[i]) for i in range(k)]
+
+    n_mask = 1 << k
+    pop = [0] * n_mask
+    for m in range(1, n_mask):
+        pop[m] = pop[m >> 1] + (m & 1)
+
+    INF = float("inf")
+    dp = [[INF] * k for _ in range(n_mask)]
+    parent = [[-1] * k for _ in range(n_mask)]
+    for g in range(k):
+        dp[1 << g][g] = d_hotel[g] + rain_cost(g, 0)
+
+    for mask in range(1, n_mask):
+        p = pop[mask]              # the next group sits at position p
+        if p >= k:
+            continue
+        row = dp[mask]
+        for last in range(k):
+            base = row[last]
+            if base == INF:
+                continue
+            for nxt in range(k):
+                if mask >> nxt & 1:
+                    continue
+                cand = base + d[last][nxt] + rain_cost(nxt, p)
+                nm = mask | (1 << nxt)
+                if cand < dp[nm][nxt] - 1e-9:
+                    dp[nm][nxt] = cand
+                    parent[nm][nxt] = last
+
+    # Reconstruct; ties break on the lowest index for determinism.
+    full = n_mask - 1
+    cur = min(range(k), key=lambda g: (dp[full][g], g))
+    mask = full
+    order_idx: list[int] = []
+    while cur != -1:
+        order_idx.append(cur)
+        prev = parent[mask][cur]
+        mask ^= (1 << cur)
+        cur = prev
+    order_idx.reverse()
+    return [keys[i] for i in order_idx]
 
 
 # --------------------------------------------------------------------------- #
 # Stage 4 — sequencing
 # --------------------------------------------------------------------------- #
-
 def _order_stops(member_indices, attrs, dm: _DistanceMatrix):
-    """Nearest-neighbor seed + 2-opt. Uses dm for real road distances.
+    """Nearest-neighbor seed + 2-opt over a CLOSED tour.
 
     member_indices are indices into `attrs` (0-based); the wrapper indexes
     coords as i+1 (because coords[0] is the hotel).
-    """
-    if len(member_indices) <= 2:
-        return list(member_indices)
 
-    def d(i_idx: int, j_idx: int) -> float:
-        return dm.between(i_idx + 1, j_idx + 1)
+    The return leg (last stop → hotel) is part of the 2-opt cost. That
+    matters beyond the day's own clock: a tour that ends back near the
+    stay is what makes the NEXT day's first stop close to this day's last
+    one on the map — the day-boundary jump travellers see as a gap. The
+    old open-tour2-opt happily ended a day on the far side of the valley
+    because the road home was free in the objective.
+    """
+    if len(member_indices) <= 1:
+        return list(member_indices)
+    if len(member_indices) == 2:
+        # Both orders close identically; start with whichever is nearer
+        # the hotel so the day reads base → far → (home).
+        a, b = member_indices
+        return ([a, b]
+                if dm.from_hotel(a + 1) <= dm.from_hotel(b + 1)
+                else [b, a])
+
+    def leg(a: int | None, b: int | None) -> float:
+        """Road distance where None is the hotel (tour sentinel)."""
+        if a is None:
+            return dm.from_hotel(b + 1)
+        if b is None:
+            return dm.from_hotel(a + 1)
+        return dm.between(a + 1, b + 1)
 
     # Seed: nearest to hotel first.
     remaining = sorted(
@@ -553,11 +669,15 @@ def _order_stops(member_indices, attrs, dm: _DistanceMatrix):
     while remaining:
         cur = tour[-1]
         nxt = min(remaining,
-                  key=lambda i: (d(cur, i), attrs[i]["name"]))
+                  key=lambda i: (leg(cur, i), attrs[i]["name"]))
         tour.append(nxt)
         remaining.remove(nxt)
 
-    # 2-opt.
+    # 2-opt, with the hotel as a sentinel on BOTH ends: position -1 and
+    # position len(tour) are the stay, so the way home is costed.
+    def node(pos: int) -> int | None:
+        return tour[pos] if 0 <= pos < len(tour) else None
+
     improved = True
     guard = 0
     while improved and guard < 32:
@@ -565,11 +685,11 @@ def _order_stops(member_indices, attrs, dm: _DistanceMatrix):
         improved = False
         for i in range(1, len(tour) - 1):
             for j in range(i + 1, len(tour)):
-                a, b = tour[i - 1], tour[i]
-                c = tour[j]
-                dd = tour[j + 1] if j + 1 < len(tour) else None
-                old = d(a, b) + (d(c, dd) if dd is not None else 0.0)
-                new = d(a, c) + (d(b, dd) if dd is not None else 0.0)
+                a, b = node(i - 1), node(i)
+                c = node(j)
+                dd = node(j + 1)
+                old = leg(a, b) + leg(c, dd)
+                new = leg(a, c) + leg(b, dd)
                 if new < old - 1e-6:
                     tour[i:j + 1] = list(reversed(tour[i:j + 1]))
                     improved = True
@@ -781,6 +901,216 @@ def _rest_day(date_str: str, rain_d: float) -> dict:
     }
 
 
+# --------------------------------------------------------------------------- #
+# Breakfast & dinner
+# --------------------------------------------------------------------------- #
+
+def _stay_meal_flags(stay):
+    """(breakfast included, dinner included, stay name) from the stay record.
+
+    meal_plan labels come from agent.stay.describe(): 'Breakfast included',
+    'Half board (breakfast + dinner)', 'Full board (all meals)',
+    'Meal plan not specified'. Anything not stated stays unsuggested-flag
+    off — we only claim a meal is included when the plan says so.
+    """
+    if not stay or not stay.get("name"):
+        return False, False, None
+    plan = str(stay.get("meal_plan") or "").lower()
+    return ("breakfast" in plan,
+            ("dinner" in plan or "all meals" in plan),
+            stay.get("name"))
+
+
+def _pick_meal(anchor, anchor_label, arrive_min, dwell_min, *, included,
+               stay_name, food, taken):
+    """One meal record: at the stay when included, else the nearest venue.
+
+    `taken` keeps breakfast/dinner venues apart across days while the pool
+    allows it (once the pool is spent we reuse venues — a repeat meal beats
+    no meal). Returns None only when the meal is NOT included and the pool
+    has no venue with coordinates at all.
+    """
+    arrive = max(int(arrive_min), _EARLIEST_MEAL_MIN)
+    depart = arrive + dwell_min
+    base = {
+        "arrive_min": arrive,
+        "depart_min": depart,
+        "arrive": _fmt_clock(arrive),
+        "depart": _fmt_clock(depart),
+    }
+    if included:
+        return {**base, "name": stay_name, "kind": "stay",
+                "included": True, "context": "provided by your stay"}
+
+    pool = [f for f in food
+            if f.get("lat") is not None and f.get("lng") is not None]
+    if not pool:
+        return None
+    order = [f for f in pool if f.get("name") not in taken] or pool
+    pick = min(
+        order,
+        key=lambda f: (_haversine(anchor[0], anchor[1],
+                                  f["lat"], f["lng"]) * _ROAD_FACTOR,
+                       f.get("name") or ""),
+    )
+    taken.add(pick.get("name"))
+    return {**base, "name": pick["name"], "kind": "restaurant",
+            "included": False, "context": f"near {anchor_label}"}
+
+
+def assign_meals(days, hotels, food, stay=None, coords_by_name=None) -> None:
+    """Attach breakfast & dinner to each day, in place.
+
+    Breakfast is provided by the accommodation when the stay's meal plan
+    says so; otherwise it is the nearest food venue to the day's FIRST
+    stop — on the way out — falling back to the neighbourhood of the
+    accommodation (and to the stay's own restaurant for rest days). Dinner
+    always sits near the accommodation at 19:30.
+
+    days / hotels are parallel lists: hotels[i] is the base (lat, lng)
+    for days[i]. coords_by_name resolves stop names to coordinates for the
+    first-stop anchor; missing coords simply anchor at the base.
+    """
+    b_incl, d_incl, stay_name = _stay_meal_flags(stay)
+    pool = [f for f in (food or []) if f.get("lat") is not None]
+    coords = coords_by_name or {}
+    taken: set = set()
+    for i, day in enumerate(days):
+        if not hotels or i >= len(hotels) or hotels[i] is None:
+            day["breakfast"] = None
+            day["dinner"] = None
+            continue
+        hotel = tuple(hotels[i])
+        stops = day.get("stops") or []
+        first = None
+        if stops and stops[0].get("name") in coords:
+            first = coords[stops[0]["name"]]
+        start_min = day.get("start_min") or int(_DAY_START_H * 60)
+        day["breakfast"] = _pick_meal(
+            first or hotel,
+            (f"your first stop, {stops[0]['name']}" if first
+             else "your stay"),
+            start_min - _BREAKFAST_OFFSET_MIN,
+            _BREAKFAST_DWELL_MIN,
+            included=b_incl, stay_name=stay_name, food=pool, taken=taken,
+        )
+        day["dinner"] = _pick_meal(
+            hotel, "your stay",
+            _DINNER_START_MIN, _DINNER_DWELL_MIN,
+            included=d_incl, stay_name=stay_name, food=pool, taken=taken,
+        )
+
+
+def retime_day(day: dict, hotel: tuple[float, float],
+               coords_by_name: dict, food_pool: list[dict],
+               stay=None) -> dict:
+    """Recompute one day's clock after the USER edited the itinerary.
+
+    Drag-and-drop in the UI adds or removes stops; this rebuilds the day
+    with the SAME timeline builder the scheduler uses (_build_timeline),
+    so arrive/depart times, lunch, the return leg and the overload flag
+    come out in exactly the shape of a scheduled day. Distances fall
+    back to haversine × ROAD_FACTOR — no road-matrix API call — so the
+    edit lands instantly and offline.
+
+    Stops keep the user's chosen order; nothing is re-sequenced behind
+    their back. An emptied day becomes a rest day (date and destination
+    metadata preserved). The caller is expected to have validated that
+    every stop name resolves in `coords_by_name` before mutating state.
+    """
+    date_str = day.get("date")
+    rain_d = float(day.get("expected_rain_mm") or 0.0)
+    preserved = {
+        k: day[k]
+        for k in ("destination", "transfer_in", "theme", "hotel",
+                  "effort_cap_min")
+        if k in day and day[k] is not None
+    }
+
+    stops_in = [s for s in (day.get("stops") or [])
+                if s.get("name") in coords_by_name]
+    if not stops_in:
+        rest = _rest_day(date_str, rain_d)
+        rest.update(preserved)
+        assign_meals([rest], [tuple(hotel)], food_pool, stay,
+                     coords_by_name=coords_by_name)
+        return rest
+
+    attrs = []
+    for s in stops_in:
+        lat, lng = coords_by_name[s["name"]]
+        attrs.append({
+            "name": s["name"],
+            "kind": s.get("kind"),
+            "lat": lat,
+            "lng": lng,
+            "elevation_m": s.get("elevation_m"),
+            "ascent_m": s.get("ascent_m"),
+        })
+    effort_min = [int(s.get("visit_min") or 60) for s in stops_in]
+    is_trek = [bool(s.get("is_trek")) for s in stops_in]
+    activities = [
+        Activity(
+            name=s["name"],
+            activity=s.get("activity") or "Sightseeing stop",
+            cls=s.get("class") or "sightsee",
+            intensity=int(s.get("intensity") or 2),
+            visit_min=int(s.get("visit_min") or 60),
+            note=s.get("note") or "",
+            source=("default" if s.get("duration_source") == "default"
+                    else "llm"),
+            is_trek=bool(s.get("is_trek")),
+            trek_source=s.get("trek_source") or "",
+            duration_source=s.get("duration_source") or "llm",
+        )
+        for s in stops_in
+    ]
+
+    dm = _DistanceMatrix(
+        [tuple(hotel)] + [coords_by_name[s["name"]] for s in stops_in]
+    )
+    tour = list(range(len(stops_in)))     # the user's order IS the order
+    (stops, totals, lunch_name, lunch_place, lunch_minutes,
+     used_food) = _build_timeline(
+        tour, attrs, dm, effort_min, is_trek, activities, food_pool,
+    )
+
+    trek_count = sum(1 for s in stops if s["is_trek"])
+    seen_mix: list[str] = []
+    for s in stops:
+        cls = s.get("class") or s.get("activity_cls")
+        if cls and cls not in seen_mix:
+            seen_mix.append(cls)
+    overloaded = totals["end_min"] > _DAY_END_H * 60
+    unverified = any(s.get("duration_source") == "default" for s in stops)
+
+    out = dict(day)                       # keep every key the day had
+    out.update({
+        "stops": stops,
+        "lunch": lunch_name,
+        "lunch_time": lunch_place["arrive"] if lunch_place else None,
+        "lunch_place": lunch_place,
+        "lunch_min": lunch_minutes,
+        "rest_day": False,
+        "start_time": _fmt_clock(totals["start_min"]),
+        "end_time": _fmt_clock(totals["end_min"]),
+        "start_min": totals["start_min"],
+        "end_min": totals["end_min"],
+        "total_travel_min": totals["total_travel_min"],
+        "total_visit_min": totals["total_visit_min"],
+        "effort_min": totals["total_visit_min"],
+        "trek_count": trek_count,
+        "class_mix": seen_mix,
+        "overloaded": overloaded,
+        "unverified": unverified,
+        "expected_rain_mm": round(rain_d, 1),
+    })
+    out.update(preserved)
+    assign_meals([out], [tuple(hotel)], food_pool, stay,
+                 coords_by_name=coords_by_name)
+    return out
+
+
 def _build_distance_matrix(kept, dest_lat, dest_lng, distance_factory):
     """Distance/time wrapper for hotel + kept stops.
 
@@ -877,7 +1207,8 @@ def build_itinerary(attrs, food, dest_lat, dest_lng,
                     exclude_names=None,
                     distance_factory=None,
                     activities=None,
-                    adventure_level="balanced") -> dict:
+                    adventure_level="balanced",
+                    stay=None) -> dict:
     """Build the day-by-day schedule.
 
     distance_factory: optional callable taking a list of (lat, lng) tuples
@@ -894,6 +1225,11 @@ def build_itinerary(attrs, food, dest_lat, dest_lng,
     adventure_level: low | balanced | high. Sets how many treks the whole
         trip may contain (see _TREK_EVERY_N_DAYS) — a 'balanced' trip is a
         mix of activities, not a summit every day.
+
+    stay: the accommodation record (agent.stay.describe shape, or any
+        dict with `name` + `meal_plan`). Its meal plan decides whether
+        breakfast/dinner are served at the stay; otherwise each day gets
+        a nearby restaurant suggestion (see assign_meals).
     """
     exclude = {n.lower() for n in (exclude_names or [])}
 
@@ -965,7 +1301,8 @@ def build_itinerary(attrs, food, dest_lat, dest_lng,
 
     # Stage 3b — day ordering.
     if n_days > 1 and len(day_members) > 1:
-        order = _order_days_geographically(day_members, kept, dm)
+        order = _order_days_geographically(day_members, kept, dm,
+                                           rain_mm=rain_mm)
         day_members = {
             new: day_members[old] for new, old in enumerate(order)
         }
@@ -1076,6 +1413,17 @@ def build_itinerary(attrs, food, dest_lat, dest_lng,
             "overloaded": overloaded,
             "unverified": unverified_day,
         })
+
+    # Stage 5b — breakfast & dinner for every day. Lunch already claimed
+    # its venues during the day loop, so hand assign_meals what is left
+    # (it falls back to the full pool on its own once the pool runs dry).
+    assign_meals(
+        days_out,
+        [(dest_lat, dest_lng)] * len(days_out),
+        food_pool or food,
+        stay,
+        coords_by_name={a["name"]: (a["lat"], a["lng"]) for a in kept},
+    )
 
     return {
         "days": days_out,

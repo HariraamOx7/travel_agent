@@ -37,6 +37,13 @@ export const api = {
       body: JSON.stringify({ exclude, include }),
     }),
 
+  moveStop: (sid, stop_name, from_day, to_day, to_index) =>
+    jsonFetch(`${BASE}/sessions/${sid}/itinerary/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stop_name, from_day, to_day, to_index }),
+    }),
+
   deleteTrip: (sid) =>
     jsonFetch(`${BASE}/sessions/${sid}`, {
       method: 'DELETE',

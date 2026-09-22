@@ -43,9 +43,15 @@ export default function TripPane({ sessionId, state, trace = [], onStateRefresh 
 
       {/* Tab Body */}
       <div className="flex-1 overflow-y-auto p-4">
-        {activeTab === 'map' && <MapTab sessionId={sessionId} />}
+        {activeTab === 'map' && <MapTab sessionId={sessionId} state={state} />}
 
-        {activeTab === 'itinerary' && <ItineraryTab state={state} />}
+        {activeTab === 'itinerary' && (
+          <ItineraryTab
+            sessionId={sessionId}
+            state={state}
+            onStateRefresh={onStateRefresh}
+          />
+        )}
 
         {activeTab === 'ideas' && (
           <IdeasTab

@@ -806,6 +806,10 @@ def _build_multi_destination(state: TripState, merged: list[str]) -> dict:
         except Exception:
             return None
 
+    # The accommodation record drives breakfast/dinner (meal plan vs
+    # restaurant suggestions) for every day built below.
+    stay_rec = ((state.recommendations or {}).get("stay") or [None])[0]
+
     # --- Per-destination scheduling -------------------------------------
     all_days = []
     unscheduled = []
@@ -886,6 +890,7 @@ def _build_multi_destination(state: TripState, merged: list[str]) -> dict:
                 distance_factory=distance_factory,
                 activities=activity_map,
                 adventure_level=adventure_level,
+                stay=stay_rec,
             )
             if "error" in res:
                 return res
@@ -907,6 +912,24 @@ def _build_multi_destination(state: TripState, merged: list[str]) -> dict:
                     day["transfer_in"] = transfers[i - 1]
                 all_days.append(day)
         offset += n_d
+
+    # Days built outside the scheduler (manual rest days above) still need
+    # breakfast & dinner; scheduled days already carry theirs.
+    pending = [day for day in all_days if "breakfast" not in day]
+    if pending:
+        all_food = [f for (_, _, fs) in pools for f in fs]
+        coord_map = {
+            a["name"]: (a["lat"], a["lng"])
+            for (_, ats, _) in pools for a in ats
+            if a.get("lat") is not None
+        }
+        hotels = []
+        for day in pending:
+            dest = next((x for x in dests
+                         if x.name == day.get("destination")), dests[0])
+            hotels.append((dest.lat, dest.lng))
+        scheduler_mod.assign_meals(pending, hotels, all_food, stay_rec,
+                                   coords_by_name=coord_map)
 
     state.itinerary = {
         "days": all_days,
@@ -932,8 +955,10 @@ def _build_multi_destination(state: TripState, merged: list[str]) -> dict:
             "end": day.get("end_time"),
             "stops": [s["name"] for s in stops],
             "km_total": round(sum(s.get("km_from_prev", 0) for s in stops), 1),
+            "breakfast": _meal_brief(day.get("breakfast")),
             "lunch": day.get("lunch"),
             "lunch_time": day.get("lunch_time"),
+            "dinner": _meal_brief(day.get("dinner")),
             "effort_min": day.get("effort_min"),
             "trek_count": day.get("trek_count"),
             "class_mix": day.get("class_mix"),
@@ -959,12 +984,29 @@ def _build_multi_destination(state: TripState, merged: list[str]) -> dict:
             "This is a MULTI-DESTINATION trip. Present the day split first "
             "(e.g. 'Munnar 2 days · Thekkady 1 day'), then each day exactly "
             "as given: destination, date, start/end time, stops IN ORDER "
-            "with arrive/depart times, activity labels, lunch and rain. "
+            "with arrive/depart times, activity labels, breakfast, lunch, "
+            "dinner and rain. A meal with included=true is served at the "
+            "accommodation — say 'included with the stay'; otherwise "
+            "present the suggested venue with its context; a null meal "
+            "means no venue was available — skip the line. "
             "Where a day has transfer_in, open it with the transfer leg "
             "(km and hours). Use exact names from the tool result — never "
-            "invent stops or prices. Mention each day's class_mix so the "
-            "variety is visible. The user can change the split by chat."
+            "invent stops, prices or meal venues. Mention each day's "
+            "class_mix so the variety is visible. The user can change the "
+            "split by chat."
         ),
+    }
+
+
+def _meal_brief(meal: dict | None) -> dict | None:
+    """Compact meal line for the chat payload — never the full record."""
+    if not meal:
+        return None
+    return {
+        "name": meal.get("name"),
+        "time": meal.get("arrive"),
+        "included": bool(meal.get("included")),
+        "context": meal.get("context"),
     }
 
 
@@ -1106,6 +1148,7 @@ def build_itinerary(args: dict, state: TripState) -> dict:
         distance_factory=distance_factory,
         activities=activity_map,
         adventure_level=getattr(state, "adventure_level", "balanced"),
+        stay=((rec.get("stay") or [None])[0]),
     )
     if "error" in result:
         return result
@@ -1144,8 +1187,10 @@ def build_itinerary(args: dict, state: TripState) -> dict:
                 for s in stops
             ],
             "km_total": round(sum(s["km_from_prev"] for s in stops), 1),
+            "breakfast": _meal_brief(day.get("breakfast")),
             "lunch": day.get("lunch"),
             "lunch_time": day.get("lunch_time"),
+            "dinner": _meal_brief(day.get("dinner")),
             "effort_min": day.get("effort_min"),
             "effort_cap_min": day.get("effort_cap_min"),
             "travel_min": day.get("total_travel_min"),
@@ -1174,10 +1219,16 @@ def build_itinerary(args: dict, state: TripState) -> dict:
         "instruction": (
             "Present each day exactly as given: date, start and end time, "
             "stops IN ORDER with their arrive/depart times, the activity "
-            "label, total km, lunch (with its time), and expected rain. "
-            "Use the exact stop names, activity labels and `lunch` value "
-            "from the tool result — never invent or substitute names, "
-            "never invent prices or durations. "
+            "label, total km, breakfast, lunch and dinner (each with its "
+            "time), and expected rain. "
+            "Use the exact stop names, activity labels and meal names from "
+            "the tool result — never invent or substitute names, "
+            "never invent prices or durations. A meal with included=true "
+            "is served at the accommodation — say 'included with the "
+            "stay'; a meal with included=false is the suggested restaurant "
+            "from its `context` (near the first stop / near the stay). "
+            "A null breakfast or dinner means no venue was available — "
+            "skip the line rather than inventing one. "
             "The trip mixes activity types on purpose: mention each day's "
             "class_mix (e.g. trek + viewpoint + food) so the user sees the "
             "variety, not just the climbs. Trek frequency follows the "
@@ -1294,5 +1345,129 @@ def estimate_budget(args: dict, state: TripState) -> dict:
             "'assumptions' block — do not recompute. If over budget, suggest "
             "which assumption to lower (e.g. stay tier) — never invent "
             "cheaper venues."
+        ),
+    }
+
+
+def move_stop(args: dict, state: TripState) -> dict:
+    """Drag-and-drop edit: move (or reposition) one stop in the LIVE itinerary.
+
+    Only the touched days are re-timed, via scheduler.retime_day — no LLM,
+    no road-matrix API: the clock is rebuilt with the haversine fallback so
+    the edit lands instantly. Everything is validated BEFORE the first
+    mutation, so a rejected move never leaves half-edited state behind.
+    """
+    it = state.itinerary or {}
+    days = it.get("days") or []
+    if not days:
+        return {"error": "no itinerary yet — build one first"}
+
+    try:
+        from_day = int(args.get("from_day"))
+        to_day = int(args.get("to_day"))
+    except (TypeError, ValueError):
+        return {"error": "from_day and to_day must be day numbers"}
+    if not (0 <= from_day < len(days) and 0 <= to_day < len(days)):
+        return {"error": f"day out of range — the trip has {len(days)} day(s)"}
+
+    name = str(args.get("stop_name") or "").strip()
+    src = days[from_day]
+    src_stops = src.get("stops") or []
+    idx = next((i for i, s in enumerate(src_stops)
+                if s.get("name") == name), -1)
+    if idx < 0:
+        idx = next((i for i, s in enumerate(src_stops)
+                    if str(s.get("name") or "").lower() == name.lower()), -1)
+    if idx < 0:
+        return {"error": f"'{name}' is not on day {from_day + 1}"}
+
+    to_index = args.get("to_index")
+    try:
+        to_index = int(to_index)
+    except (TypeError, ValueError):
+        to_index = None
+
+    # --- Validation, all BEFORE the first mutation -----------------------
+    rec = state.recommendations or {}
+    coords_by_name = {
+        a["name"]: (a["lat"], a["lng"])
+        for a in (rec.get("attractions") or [])
+        if a.get("lat") is not None and a.get("lng") is not None
+    }
+    dst_stops = days[to_day].get("stops") or []
+    affected = list(src_stops) + ([] if to_day == from_day
+                                  else list(dst_stops))
+    missing = sorted({str(s.get("name")) for s in affected
+                      if s.get("name") not in coords_by_name})
+    if missing:
+        return {"error": f"no coordinates for: {', '.join(missing)}"}
+
+    def _hotel_for(day: dict):
+        """Base coordinates for a day — matched by destination name when
+        the trip spans several destinations, else the first geocoded one."""
+        dest_name = str(day.get("destination") or "").lower()
+        geocoded = [d for d in state.destinations
+                    if d.lat is not None and d.lng is not None]
+        for d in geocoded:
+            if str(d.name or "").lower() == dest_name:
+                return (d.lat, d.lng)
+        return (geocoded[0].lat, geocoded[0].lng) if geocoded else None
+
+    hotel_src = _hotel_for(src)
+    hotel_dst = hotel_src if to_day == from_day else _hotel_for(days[to_day])
+    if hotel_src is None or hotel_dst is None:
+        return {"error": "destination coordinates missing — cannot re-time"}
+
+    # --- Mutate -----------------------------------------------------------
+    stop = src_stops.pop(idx)
+    if days[to_day].get("stops") is None:
+        days[to_day]["stops"] = []
+    dst_stops = days[to_day]["stops"]
+    if to_index is None or not (0 <= to_index <= len(dst_stops)):
+        to_index = len(dst_stops)
+    dst_stops.insert(to_index, stop)
+
+    food_all = [f for f in (rec.get("food") or [])
+                if f.get("lat") is not None]
+    stay_rec = ((rec.get("stay") or [None])[0])
+    days[from_day] = scheduler_mod.retime_day(
+        days[from_day], hotel_src, coords_by_name, list(food_all),
+        stay=stay_rec,
+    )
+    if to_day != from_day:
+        # Keep the two lunches apart when the pool allows it.
+        first_lunch = days[from_day].get("lunch")
+        pool = [f for f in food_all if f.get("name") != first_lunch]
+        days[to_day] = scheduler_mod.retime_day(
+            days[to_day], hotel_dst, coords_by_name,
+            pool or list(food_all),
+            stay=stay_rec,
+        )
+
+    # Sessions built before meals existed (or days the scheduler never
+    # touched) get breakfast & dinner here — the first edit heals the trip.
+    pending = [dd for dd in days if "breakfast" not in dd]
+    if pending:
+        hotels = [_hotel_for(dd) or hotel_src for dd in pending]
+        scheduler_mod.assign_meals(pending, hotels, food_all, stay_rec,
+                                   coords_by_name)
+
+    # --- Flags a user edit can invalidate --------------------------------
+    v = it.setdefault("validation", {})
+    v["overloaded_days"] = [d.get("date") for d in days
+                            if d.get("overloaded")]
+    v["unverified_days"] = [d.get("date") for d in days
+                            if d.get("unverified")]
+    v["trek_rule_ok"] = all((d.get("trek_count") or 0) <= 1 for d in days)
+
+    return {
+        "moved": stop["name"],
+        "from_day": from_day + 1,
+        "to_day": to_day + 1,
+        "to_index": to_index,
+        "instruction": (
+            "The traveller moved a stop by hand. Present the affected days "
+            "exactly as returned — new arrive/depart times, lunch and end "
+            "time — not the old schedule."
         ),
     }

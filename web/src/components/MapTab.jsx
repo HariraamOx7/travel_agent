@@ -2,20 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { api } from '../api'
-
-// Day color palette — distinct, dark-UI-friendly, colorblind-tolerant.
-const DAY_COLORS = [
-  '#e6194B', // red
-  '#3cb44b', // green
-  '#4363d8', // blue
-  '#f58231', // orange
-  '#911eb4', // purple
-  '#42d4f4', // cyan
-  '#f032e6', // magenta
-  '#bfef45', // lime
-  '#fabed4', // pink
-  '#469990', // teal
-]
+import { DAY_COLORS } from '../dayColors'
 
 export default function MapTab({ sessionId, state }) {
   const containerRef = useRef(null)
@@ -135,21 +122,18 @@ export default function MapTab({ sessionId, state }) {
     })
 
     // ---- Itinerary: colored stops + route polylines -------------------
+    // Two passes: first the per-day stops and solid sightseeing legs,
+    // then the connectors — the trip path must have NO gaps, so dashed
+    // hops chain origin → day₁ → … → dayₙ → base.
     const itinerary = data.itinerary_stops || []
+    const daySegments = []           // non-empty days, in order
     itinerary.forEach((day, dayIdx) => {
       const color = DAY_COLORS[dayIdx % DAY_COLORS.length]
       const dayStops = (day.stops || []).filter((s) => s.lat != null)
       if (!dayStops.length) return
 
       const coords = dayStops.map((s) => [s.lat, s.lng])
-
-      // Dashed line from origin to the first stop of the FIRST day only.
-      if (dayIdx === 0 && data.origin?.lat != null) {
-        add(L.polyline(
-          [[data.origin.lat, data.origin.lng], coords[0]],
-          { color, weight: 2, opacity: 0.5, dashArray: '6 8' }
-        ))
-      }
+      daySegments.push({ color, coords })
 
       // Solid route between consecutive stops of the same day.
       if (coords.length >= 2) {
@@ -175,6 +159,36 @@ export default function MapTab({ sessionId, state }) {
         bounds.push([s.lat, s.lng])
       })
     })
+
+    // ---- Connectors (dashed): close every gap in the trip path --------
+    const first = daySegments[0]
+    if (first) {
+      // Outbound: origin → first stop of the first day.
+      if (data.origin?.lat != null) {
+        add(L.polyline(
+          [[data.origin.lat, data.origin.lng], first.coords[0]],
+          { color: first.color, weight: 2, opacity: 0.5, dashArray: '6 8' }
+        ))
+      }
+      // Day boundaries: last stop of day k → first stop of day k+1.
+      for (let i = 1; i < daySegments.length; i++) {
+        const prev = daySegments[i - 1]
+        const cur = daySegments[i]
+        add(L.polyline(
+          [prev.coords[prev.coords.length - 1], cur.coords[0]],
+          { color: cur.color, weight: 2, opacity: 0.55, dashArray: '6 8' }
+        ))
+      }
+      // Return: last stop of the last day → the base.
+      const lastSeg = daySegments[daySegments.length - 1]
+      if (data.destination?.lat != null) {
+        add(L.polyline(
+          [lastSeg.coords[lastSeg.coords.length - 1],
+           [data.destination.lat, data.destination.lng]],
+          { color: lastSeg.color, weight: 2, opacity: 0.45, dashArray: '6 8' }
+        ))
+      }
+    }
 
     // ---- Auto-fit ONCE, and only if the user hasn't interacted --------
     // Without this guard, every chat reply triggers a state update,
