@@ -58,9 +58,14 @@ SEARCH_DESTINATION_CANDIDATES = _fn(
 
 CONFIRM_DESTINATION = _fn(
     "confirm_destination",
-    "Lock in the user's chosen destination from the candidate list.",
+    "Lock in the user's chosen destination(s) from the candidate list. "
+    "Call it once with EVERY pick when the user selects more than one.",
     {"choice": {"type": "string",
-        "description": "User's pick as list number ('2') or name ('Ooty')"}},
+        "description": "Pick as list number ('2'), name ('Ooty'), or "
+                       "several joined by commas/'and' ('1 and 2', "
+                       "'Ooty and Munnar'). 'both'/'all' also accepted. "
+                       "When the user chooses more than one, include EVERY "
+                       "pick in this single call — never only the first."}},
     required=["choice"],
 )
 GET_WEATHER = _fn(

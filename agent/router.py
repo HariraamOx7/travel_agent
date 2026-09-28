@@ -77,6 +77,9 @@ _NLP_EXEMPLARS = [
     ("confirm_destination", "the first one"),
     ("confirm_destination", "let's go with ooty"),
     ("confirm_destination", "choose option 3"),
+    ("confirm_destination", "1 and 2"),
+    ("confirm_destination", "both"),
+    ("confirm_destination", "ooty and munnar"),
 
     # Pagination / Show More
     ("show_more_candidates", "more"),

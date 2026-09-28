@@ -2,30 +2,127 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root {
+html {
+  height: 100%;
+  background: #0e0e10;
+}
+
+html,
+body,
+#root {
   height: 100%;
   margin: 0;
-  background: #0e0e10;
+}
+
+/* Ambient backdrop: two soft glows so panels feel layered instead of
+   floating on flat black. Fixed so it stays put while panes scroll. */
+body {
+  background:
+    radial-gradient(1100px 620px at 12% -8%, rgba(255, 138, 61, 0.10), transparent 60%),
+    radial-gradient(900px 520px at 92% -4%, rgba(67, 99, 216, 0.10), transparent 55%),
+    #0e0e10;
+  background-attachment: fixed;
   color: #f5f5f5;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgba(255, 138, 61, 0.35);
 }
 
 .leaflet-container {
   background: #0e0e10;
   border-radius: 12px;
+  font: inherit;
 }
+
+/* Visible, consistent keyboard focus everywhere. */
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid #ff8a3d;
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared component classes                                            */
+/* ------------------------------------------------------------------ */
+@layer components {
+  .panel {
+    @apply bg-surface/90 backdrop-blur-sm border border-border rounded-2xl shadow-[0_1px_2px_rgba(0,0,0,0.4),0_16px_40px_-24px_rgba(0,0,0,0.8)];
+  }
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-border bg-bg/70 px-2.5 py-1 text-[11px] text-muted;
+  }
+  .section-title {
+    @apply text-[11px] font-semibold uppercase tracking-widest text-muted;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Animations                                                          */
+/* ------------------------------------------------------------------ */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.fade-up {
+  animation: fadeUp 0.28s ease both;
+}
+
+@keyframes typingBounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.typing-dot {
+  animation: typingBounce 1.2s infinite;
+}
+
+@keyframes blobDrift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(30px, -24px, 0) scale(1.06);
+  }
+}
+
+.blob {
+  animation: blobDrift 18s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-up,
+  .blob,
+  .typing-dot {
+    animation: none !important;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Unified scrollbar styling                                           */
 /* ------------------------------------------------------------------ */
-/* Applied globally so chat, trip tabs, and any future scrollable     */
-/* container share the same subtle look. On dark UI the default       */
-/* Chromium scrollbar is jarringly bright; this tones it down.        */
-/*                                                                     */
-/* Two syntaxes are needed:                                            */
-/*   - WebKit/Blink (Chrome, Edge, Safari): ::-webkit-scrollbar        */
-/*   - Firefox: scrollbar-width + scrollbar-color                      */
-/* ------------------------------------------------------------------ */
-
 /* Firefox */
 * {
   scrollbar-width: thin;

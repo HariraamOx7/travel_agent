@@ -49,6 +49,9 @@ _OVERPASS_HEADERS = {
 
 _CACHE_DIR = "cache"
 
+# Wall-clock ceiling for one tiled Overpass scan (see _discover_via_overpass).
+_DISCOVERY_BUDGET_S = 90
+
 
 # A "nearby" destination from a major city is never a 20 km suburb.
 # 80 km is far enough to exclude the origin's own metro area, close
@@ -335,14 +338,28 @@ def _discover_via_overpass(lat: float, lng: float, radius_km: float) -> dict:
     all_candidates: list[dict] = []
     failures = 0
 
+    # A 500 km radius tiles into ~49 boxes, and each box tries up to three
+    # mirrors with a 30s read timeout — a dead mirror set could stall this
+    # for the better part of an hour inside a chat turn. Cap the whole scan
+    # and keep whatever tiles answered before the budget ran out.
+    deadline = time.time() + _DISCOVERY_BUDGET_S
+
     for i, (s, w, n, e) in enumerate(boxes):
+        if time.time() >= deadline:
+            print(f"  [discovery/overpass] budget spent after "
+                  f"{i}/{len(boxes)} tiles", flush=True)
+            break
         q = _overpass_query_bbox(s, w, n, e)
         got_one = False
         for url in _OVERPASS_MIRRORS:
             host = url.split("/")[2]
+            remaining = deadline - time.time()
+            if remaining <= 1:
+                break
             try:
                 resp = requests.post(
-                    url, data={"data": q}, timeout=(5, 30),
+                    url, data={"data": q},
+                    timeout=(5, max(3.0, min(30.0, remaining))),
                     headers=_OVERPASS_HEADERS,
                 )
                 if resp.status_code == 429:

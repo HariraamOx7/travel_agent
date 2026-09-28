@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import ChatPane from '../components/ChatPane'
 import TripPane from '../components/TripPane'
+import { fmtRange } from '../format'
 
 export default function Builder() {
   const { sessionId } = useParams()
@@ -51,34 +52,62 @@ export default function Builder() {
     }
   }
 
-  if (!state) return <div className="p-8 text-muted">Loading…</div>
+  if (!state) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 text-muted fade-up">
+          <span className="inline-grid place-items-center w-11 h-11 rounded-2xl bg-gradient-to-br from-accent to-amber-500 text-black text-xl shadow-glow">
+            ✈️
+          </span>
+          <span className="text-sm">Loading your trip…</span>
+        </div>
+      </div>
+    )
+  }
+
+  const title =
+    state.destinations?.[0]?.name ||
+    state.destination_candidates?.[0]?.name ||
+    state.pending_destination_query ||
+    'New Trip'
+  const dateRange = fmtRange(state.start_date, state.end_date)
+  const travellers = state.travellers || 1
 
   return (
     <div className="h-screen flex flex-col">
-      <header className="border-b border-border px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="text-2xl">✈️</div>
-          <div>
-            <div className="font-semibold">
-              {state.destinations?.[0]?.name ||
-                state.destination_candidates?.[0]?.name ||
-                state.pending_destination_query ||
-                'New Trip'}
-            </div>
-            <div className="text-xs text-muted">
-              {state.origin ? `From ${state.origin} · ` : ''}
-              {state.start_date && state.end_date
-                ? `${state.start_date} → ${state.end_date} · `
-                : ''}
-              {state.travellers || 1} traveller{(state.travellers || 1) > 1 ? 's' : ''}
+      <header className="shrink-0 border-b border-border/70 bg-surface/60 backdrop-blur-md px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            onClick={() => navigate('/')}
+            title="All trips"
+            aria-label="Back to all trips"
+            className="shrink-0 w-9 h-9 grid place-items-center rounded-full border border-border text-muted hover:text-white hover:border-accent/60 transition"
+          >
+            ←
+          </button>
+          <span className="hidden sm:grid place-items-center w-9 h-9 rounded-xl bg-gradient-to-br from-accent to-amber-500 text-black text-lg shadow-glow shrink-0">
+            ✈️
+          </span>
+          <div className="min-w-0">
+            <div className="font-semibold tracking-tight truncate">{title}</div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted mt-1">
+              {state.origin && (
+                <span className="pill py-0.5">🏠 {state.origin}</span>
+              )}
+              {dateRange && (
+                <span className="pill py-0.5">📅 {dateRange}</span>
+              )}
+              <span className="pill py-0.5">
+                👤 {travellers} traveller{travellers > 1 ? 's' : ''}
+              </span>
             </div>
           </div>
         </div>
         <button
           onClick={() => navigate('/')}
-          className="text-sm border border-border rounded px-3 py-1 hover:border-accent"
+          className="hidden sm:block text-sm border border-border rounded-full px-3.5 py-1.5 text-muted hover:text-white hover:border-accent/60 transition shrink-0"
         >
-          ← All trips
+          All trips
         </button>
       </header>
 

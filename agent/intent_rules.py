@@ -6,6 +6,35 @@ the LLM. Everything the rules miss falls through to the ML classifier.
 import re
 from typing import Optional
 
+# Precompiled guards for the confirm_destination branch.
+_NUMERIC_PICK = re.compile(r"(?:option\s+|number\s+|#)?\s*\d{1,2}\s*", re.I)
+_ORDINAL_PICK = re.compile(
+    r"\s*(?:the\s+)?(?:first|second|third|fourth|fifth|last)\s+"
+    r"(?:one|option)?\s*", re.I,
+)
+_MULTI_NUMERIC_PICK = re.compile(
+    r"^\s*(?:\d{1,2}\s*(?:,|&|and)\s*)+\d{1,2}\s*$", re.I,
+)
+# Phrases that select exactly two options ("both", "the two").
+_TWO_PICK_PHRASE = re.compile(
+    r"^\s*(?:both(?:\s+(?:of\s+)?(?:them|these|two))?|"
+    r"both\s+(?:options?|places?|destinations?|hill\s+stations?)|"
+    r"two\s+of\s+them|the\s+two)\s*$", re.I,
+)
+# Phrases that select the whole candidate list ("all", "everything").
+_ALL_PICK_PHRASE = re.compile(
+    r"^\s*(?:all(?:\s+of\s+(?:them|these|the\s+(?:above|list)))?|"
+    r"all\s+(?:options?|places?|destinations?|hill\s+stations?)|"
+    r"each\s+of\s+them|everything|the\s+(?:whole|entire)\s+list)\s*$", re.I,
+)
+# Superset used as a _RULES pattern row; the guard below narrows it.
+_LIST_PICK_PHRASE = re.compile(
+    r"^\s*(?:(?:both|all)(?:\s+(?:of\s+)?(?:them|these|two|above|list))?|"
+    r"(?:both|all)\s+(?:options?|places?|destinations?|hill\s+stations?)|"
+    r"each\s+of\s+them|everything|two\s+of\s+them|the\s+(?:two|(?:whole|entire)\s+list))\s*$",
+    re.I,
+)
+
 # (pattern, intent, confidence) — order matters, first match wins.
 _RULES: list[tuple[re.Pattern, str, float]] = [
     # -- numeric pick (state-aware; guard applied in rule_intent) -------
@@ -15,6 +44,11 @@ _RULES: list[tuple[re.Pattern, str, float]] = [
     (re.compile(r"^\s*(the\s+)?(first|second|third|fourth|fifth|last)\s+(one|option)?\s*$",
                 re.I),
      "confirm_destination", 0.85),
+    # multi-index pick: "1 and 2" / "1, 3 & 4"
+    (re.compile(r"^\s*(?:\d{1,2}\s*(?:,|&|and)\s*)+\d{1,2}\s*$", re.I),
+     "confirm_destination", 0.95),
+    # whole-list pick: "both" / "all of them" / "everything"
+    (_LIST_PICK_PHRASE, "confirm_destination", 0.90),
 
 
      # -- change pace -----------------------------------------------------
@@ -43,7 +77,19 @@ _RULES: list[tuple[re.Pattern, str, float]] = [
      "greet", 0.95),
 
     # -- provide_slot / trip initiation (from X to Y, plan trip from/to) --
-    (re.compile(r"\b(from\s+.+\s+to\b|plan\s+(?:a\s+)?trip\s+(?:from|to)|trip\s+(?:from|to)|travel\s+(?:from|to))\b", re.I),
+    # A trip *request* is slot-providing even when it has no explicit
+    # "from … to" pair: "plan a trip to any hill station", "planning our
+    # holiday". Without this the weak ML classifier reads the word "plan"
+    # as build_itinerary and dead-ends on "confirm a destination and dates
+    # first" instead of discovering destinations.
+    (re.compile(
+        r"\b(?:plan|planning|organi[sz]e|organi[sz]ing|book|booking)\s+"
+        r"(?:me\s+|us\s+)?(?:a|an|my|our|the)?\s*"
+        r"(?:trip|vacation|holiday|getaway)\b"
+        r"|\b(?:trip|vacation|holiday|getaway)\s+(?:from|to|for)\b",
+        re.I),
+     "provide_slot", 0.90),
+    (re.compile(r"\b(from\s+.+\s+to\b|trip\s+(?:from|to)|travel\s+(?:from|to))\b", re.I),
      "provide_slot", 0.95),
 
     
@@ -95,13 +141,6 @@ _RULES: list[tuple[re.Pattern, str, float]] = [
      "ask_weather", 0.90),
 ]
 
-# Precompiled guards for the confirm_destination branch.
-_NUMERIC_PICK = re.compile(r"(?:option\s+|number\s+|#)?\s*\d{1,2}\s*", re.I)
-_ORDINAL_PICK = re.compile(
-    r"\s*(?:the\s+)?(?:first|second|third|fourth|fifth|last)\s+"
-    r"(?:one|option)?\s*", re.I,
-)
-
 
 def rule_intent(text: str, state=None) -> Optional[tuple[str, float]]:
     """Return (intent, confidence) if a high-precision rule fires, else None."""
@@ -116,6 +155,23 @@ def rule_intent(text: str, state=None) -> Optional[tuple[str, float]]:
             if user_clean.lower() == c.name.lower() or (len(user_clean) >= 4 and user_clean.lower() in c.name.lower()):
                 return "confirm_destination", 0.95
 
+        # Multi-name pick: "Ooty and Munnar" / "Ooty, Kodaikanal" — every
+        # token must resolve to a distinct pending candidate.
+        tokens = [t.strip() for t in re.split(r"\s*(?:,|&|\band)\s*", user_clean, flags=re.I) if t.strip()]
+        if len(tokens) >= 2:
+            matched: set = set()
+            ok = True
+            for t in tokens:
+                hit = next((c.name for c in cands
+                            if t.lower() == c.name.lower()
+                            or (len(t) >= 4 and t.lower() in c.name.lower())), None)
+                if hit is None or hit in matched:
+                    ok = False
+                    break
+                matched.add(hit)
+            if ok:
+                return "confirm_destination", 0.95
+
     for pattern, intent, conf in _RULES:
         if not pattern.search(text):
             continue
@@ -124,8 +180,20 @@ def rule_intent(text: str, state=None) -> Optional[tuple[str, float]]:
         # the state actually has candidates to confirm.
         if intent == "confirm_destination":
             cands = list(getattr(state, "destination_candidates", []) or [])
-            if _NUMERIC_PICK.fullmatch(text) or _ORDINAL_PICK.fullmatch(text):
+            dests = list(getattr(state, "destinations", []) or [])
+            if (_NUMERIC_PICK.fullmatch(text) or _ORDINAL_PICK.fullmatch(text)
+                    or _MULTI_NUMERIC_PICK.fullmatch(text)):
                 if not cands:
+                    continue
+            elif _TWO_PICK_PHRASE.fullmatch(text):
+                # "both" means exactly two pending candidates — or, once the
+                # pick is already locked in, the two destinations we confirmed
+                # earlier. Otherwise leave it to the LLM, which has the chat
+                # context (e.g. a reply about something else entirely).
+                if len(cands) != 2 and not (not cands and len(dests) >= 2):
+                    continue
+            elif _ALL_PICK_PHRASE.fullmatch(text):
+                if not cands and len(dests) < 2:
                     continue
             else:
                 if not any(c.name.lower() in text.lower() for c in cands):

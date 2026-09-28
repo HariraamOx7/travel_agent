@@ -1,4 +1,172 @@
 {
+ "attraction|500 year old hollow tree|balanced": {
+  "activity": "Admire ancient hollow tree",
+  "class": "sight",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 20
+ },
+ "attraction|action mania|balanced": {
+  "activity": "Try adventure activities",
+  "class": "leisure",
+  "intensity": 3,
+  "note": "",
+  "source": "llm",
+  "visit_min": 60
+ },
+ "attraction|anamudi peak|balanced": {
+  "activity": "Trek to Anamudi summit",
+  "class": "trek",
+  "intensity": 5,
+  "note": "300+\u202fm ascent, multi\u2011hour trek",
+  "source": "llm",
+  "visit_min": 240
+ },
+ "attraction|boathouse|balanced": {
+  "activity": "Visit lakeside boathouse",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "attraction|calmelagiri botanical garden|balanced": {
+  "activity": "Botanical garden walk",
+  "class": "leisure",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 60
+ },
+ "attraction|cheeky river crossing to latchmi estate|balanced": {
+  "activity": "River crossing trek",
+  "class": "trek",
+  "intensity": 4,
+  "note": "Modest climb and river wade",
+  "source": "llm",
+  "visit_min": 90
+ },
+ "attraction|coaker's walk|balanced": {
+  "activity": "Stroll Coaker's Walk",
+  "class": "leisure",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 60
+ },
+ "attraction|deepa world spicegarden|balanced": {
+  "activity": "Spice garden tour",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 45
+ },
+ "attraction|echo point|balanced": {
+  "activity": "Echo point stop",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 20
+ },
+ "attraction|free entry from here :)|balanced": {
+  "activity": "Skip (free entry point)",
+  "class": "skip",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 15
+ },
+ "attraction|greencrest|balanced": {
+  "activity": "Explore Greencrest area",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "attraction|honey tree|balanced": {
+  "activity": "Visit honey orchard",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "attraction|jeep safari|balanced": {
+  "activity": "Guided jeep safari",
+  "class": "leisure",
+  "intensity": 3,
+  "note": "",
+  "source": "llm",
+  "visit_min": 90
+ },
+ "attraction|pine forest|balanced": {
+  "activity": "Walk through pine forest",
+  "class": "leisure",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 45
+ },
+ "attraction|silver cascade falls|balanced": {
+  "activity": "Visit Silver Cascade waterfall",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 45
+ },
+ "monument|ashoka pillar|balanced": {
+  "activity": "See historic Ashoka Pillar",
+  "class": "sight",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 20
+ },
+ "museum|kodai observatory museum|balanced": {
+  "activity": "Explore observatory museum",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 45
+ },
+ "museum|wax world|balanced": {
+  "activity": "Visit wax museum",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 45
+ },
+ "park|dtpc kids adventure park|balanced": {
+  "activity": "Kids adventure playground",
+  "class": "leisure",
+  "intensity": 3,
+  "note": "",
+  "source": "llm",
+  "visit_min": 60
+ },
+ "park|fun forest|balanced": {
+  "activity": "Explore adventure park",
+  "class": "leisure",
+  "intensity": 3,
+  "note": "",
+  "source": "llm",
+  "visit_min": 60
+ },
+ "park|sengulam eco-tourism|balanced": {
+  "activity": "Eco\u2011tourism park visit",
+  "class": "leisure",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 60
+ },
  "peak|chokramudi|balanced": {
   "activity": "Trek to Chokramudi peak",
   "class": "trek",
@@ -12,6 +180,14 @@
   "class": "trek",
   "intensity": 5,
   "note": "677\u202fm ascent",
+  "source": "llm",
+  "visit_min": 180
+ },
+ "peak|dolmen peak|balanced": {
+  "activity": "Trek to Dolmen Peak summit",
+  "class": "trek",
+  "intensity": 4,
+  "note": "\u2248300\u202fm ascent, multi\u2011hour hike",
   "source": "llm",
   "visit_min": 180
  },
@@ -31,6 +207,14 @@
   "source": "llm",
   "visit_min": 200
  },
+ "peak|netti malai|balanced": {
+  "activity": "Trek to Netti Malai peak",
+  "class": "trek",
+  "intensity": 4,
+  "note": "\u2248300\u202fm climb, several hours",
+  "source": "llm",
+  "visit_min": 180
+ },
  "peak|umaya mala|balanced": {
   "activity": "Trek to Umaya Mala summit",
   "class": "trek",
@@ -38,6 +222,22 @@
   "note": "915\u202fm ascent",
   "source": "llm",
   "visit_min": 210
+ },
+ "viewpoint|anaimudi view|balanced": {
+  "activity": "Scenic viewpoint stop",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|avocado hill|balanced": {
+  "activity": "Walk avocado orchard hill",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 45
  },
  "viewpoint|circular tea plantations|balanced": {
   "activity": "Circular Tea Plantations walk",
@@ -47,6 +247,38 @@
   "source": "llm",
   "visit_min": 45
  },
+ "viewpoint|dolphin's nose|balanced": {
+  "activity": "Snap Dolphin's Nose vista",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 45
+ },
+ "viewpoint|green valley viewpoint|balanced": {
+  "activity": "Observe green valley",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|green valley view|balanced": {
+  "activity": "Panoramic valley view",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|guna's cave viewpoint|balanced": {
+  "activity": "Look into Guna's cave",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
  "viewpoint|hill top view point|balanced": {
   "activity": "Hill Top View Point stop",
   "class": "sightsee",
@@ -55,11 +287,203 @@
   "source": "llm",
   "visit_min": 45
  },
+ "viewpoint|lake and view point|balanced": {
+  "activity": "Relax by lake view",
+  "class": "leisure",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|moir's point view|balanced": {
+  "activity": "Enjoy Moir's Point scenery",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|monkey's cliff|balanced": {
+  "activity": "View cliff and monkeys",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|mountain view|balanced": {
+  "activity": "Take mountain photos",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|munnarview 0|balanced": {
+  "activity": "Viewpoint stop",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "Easy walk",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|munnarview 1|balanced": {
+  "activity": "Viewpoint stop",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "Easy walk",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|munnarview 2|balanced": {
+  "activity": "Viewpoint stop",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "Easy walk",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|munnarview 3|balanced": {
+  "activity": "Viewpoint stop",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "Easy walk",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|munnarview 4|balanced": {
+  "activity": "Viewpoint stop",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "Easy walk",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|munnarview 5|balanced": {
+  "activity": "Viewpoint stop",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "Easy walk",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|munnarview 6|balanced": {
+  "activity": "Viewpoint stop",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "Easy walk",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|munnarview 7|balanced": {
+  "activity": "Viewpoint stop",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "Easy walk",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|munnarview 8|balanced": {
+  "activity": "Viewpoint stop",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "Easy walk",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|palani temple majestic viewpoint|balanced": {
+  "activity": "View temple from height",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|palani viewpoint|balanced": {
+  "activity": "Enjoy Palani panorama",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|palar dam viewpoint|balanced": {
+  "activity": "Observe dam and reservoir",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|photo point|balanced": {
+  "activity": "Quick photo stop",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 20
+ },
+ "viewpoint|pillar rocks view|balanced": {
+  "activity": "View pillar rocks formation",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|point #9|balanced": {
+  "activity": "Scenic viewpoint",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|ponmudi hanging bridge|balanced": {
+  "activity": "Cross hanging bridge",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
  "viewpoint|pothamedu|balanced": {
   "activity": "Viewpoint stop at Pothamedu",
   "class": "sightsee",
   "intensity": 2,
   "note": "Gentle 22\u202fm climb",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|resting and viewpoint|balanced": {
+  "activity": "Rest and enjoy view",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|river valley viewpoint|balanced": {
+  "activity": "Observe river valley",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|silent valley view|balanced": {
+  "activity": "Take in Silent Valley vista",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|suicide point|balanced": {
+  "activity": "Take in dramatic view",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
   "source": "llm",
   "visit_min": 30
  },
@@ -79,6 +503,14 @@
   "source": "llm",
   "visit_min": 30
  },
+ "viewpoint|sunset/sunrise view|balanced": {
+  "activity": "Sunset/sunrise viewpoint",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 45
+ },
  "viewpoint|tea paddies|balanced": {
   "activity": "Tea paddies viewpoint walk",
   "class": "sightsee",
@@ -86,5 +518,69 @@
   "note": "136\u202fm ascent",
   "source": "llm",
   "visit_min": 40
+ },
+ "viewpoint|the cross|balanced": {
+  "activity": "Visit historic cross",
+  "class": "sight",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 15
+ },
+ "viewpoint|thekkadypark 0|balanced": {
+  "activity": "Viewpoint stop",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "Easy walk",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|thekkadypark 1|balanced": {
+  "activity": "Viewpoint stop",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "Easy walk",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|thekkadypark 2|balanced": {
+  "activity": "Viewpoint stop",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "Easy walk",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|thekkadypark 3|balanced": {
+  "activity": "Viewpoint stop",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "Easy walk",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|upper lake view|balanced": {
+  "activity": "Enjoy lake panorama",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|watch tower|balanced": {
+  "activity": "Climb watch tower for view",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "|a|balanced": {
+  "activity": "Pass through",
+  "class": "skip",
+  "intensity": 1,
+  "note": "No notable attraction",
+  "source": "llm",
+  "visit_min": 15
  }
 }

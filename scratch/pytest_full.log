@@ -1,0 +1,274 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.0, pytest-9.1.1, pluggy-1.6.0 -- D:\ACADEMICS\Semester_5\AINLP\Project\travel-agent - working-react\server\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\ACADEMICS\Semester_5\AINLP\Project\travel-agent - working-react
+plugins: anyio-4.15.1
+collecting ... collected 154 items
+
+test/test_api.py::test_gemini FAILED                                     [  0%]
+test/test_api.py::test_places FAILED                                     [  1%]
+test/test_api.py::test_open_meteo PASSED                                 [  1%]
+test/test_api.py::test_ortools PASSED                                    [  2%]
+test/test_features.py::TestSplitDays::test_sums_exactly_to_trip_length PASSED [  3%]
+test/test_features.py::TestSplitDays::test_every_destination_gets_at_least_one_day PASSED [  3%]
+test/test_features.py::TestSplitDays::test_weighted_allocation_favors_bigger_pools PASSED [  4%]
+test/test_features.py::TestMultiDestination::test_days_split_and_stitched_in_date_order PASSED [  5%]
+test/test_features.py::TestMultiDestination::test_transfer_leg_on_first_day_of_second_destination PASSED [  5%]
+test/test_features.py::TestMultiDestination::test_each_destination_scheduled_with_own_anchor PASSED [  6%]
+test/test_features.py::TestMultiDestination::test_payload_contract PASSED [  7%]
+test/test_features.py::TestMultiDestination::test_guard_fewer_days_than_destinations PASSED [  7%]
+test/test_features.py::TestMultiDestination::test_single_destination_takes_normal_path PASSED [  8%]
+test/test_features.py::TestCategoryRouting::test_hill_hint_uses_curated_path PASSED [  9%]
+test/test_features.py::TestCategoryRouting::test_beach_hint_uses_curated_path PASSED [  9%]
+test/test_features.py::TestCategoryRouting::test_temple_and_wildlife_hints PASSED [ 10%]
+test/test_features.py::TestCategoryRouting::test_uncategorized_falls_through_to_overpass PASSED [ 11%]
+test/test_features.py::TestCategoryRouting::test_nearby_search_categories_and_radius PASSED [ 11%]
+test/test_in_between_router.py::test_routing_benchmark FAILED            [ 12%]
+test/test_in_between_router.py::test_orchestrator_integration PASSED     [ 12%]
+test/test_llm_budget.py::test_fit_stays_under_budget PASSED              [ 13%]
+test/test_llm_budget.py::test_fit_keeps_newest_turn PASSED               [ 14%]
+test/test_llm_budget.py::test_fit_drops_oldest_first PASSED              [ 14%]
+test/test_llm_budget.py::test_fit_never_mutates_input PASSED             [ 15%]
+test/test_llm_budget.py::test_fit_removes_orphaned_tool_messages PASSED  [ 16%]
+test/test_llm_budget.py::test_fit_truncates_giant_tool_result_but_keeps_question PASSED [ 16%]
+test/test_llm_budget.py::test_fit_handles_tiny_budget_without_crashing PASSED [ 17%]
+test/test_llm_budget.py::test_fit_empty_and_system_only PASSED           [ 18%]
+test/test_llm_budget.py::test_413_halves_budget_and_retries_immediately PASSED [ 18%]
+test/test_llm_budget.py::test_413_gives_up_after_repeated_failures PASSED [ 19%]
+test/test_llm_budget.py::test_fitted_messages_are_what_gets_sent PASSED  [ 20%]
+test/test_nlp_tool_router.py::test_intent_classification PASSED          [ 20%]
+test/test_nlp_tool_router.py::test_tool_router_direct_execution PASSED   [ 21%]
+test/test_nlp_tool_router.py::test_response_caching PASSED               [ 22%]
+test/test_pagination.py::test_candidate_pagination FAILED                [ 22%]
+test/test_pipeline.py::TestNER::test_from_to_extracts_both_places PASSED [ 23%]
+test/test_pipeline.py::TestNER::test_duration_phrase_derives_end_date PASSED [ 24%]
+test/test_pipeline.py::TestNER::test_two_explicit_dates_beat_duration PASSED [ 24%]
+test/test_pipeline.py::TestNER::test_duration_for_n_nights PASSED        [ 25%]
+test/test_pipeline.py::TestNER::test_duration_only_no_start_date PASSED  [ 25%]
+test/test_pipeline.py::TestNER::test_money_with_k_suffix PASSED          [ 26%]
+test/test_pipeline.py::TestNER::test_money_with_rupee_symbol PASSED      [ 27%]
+test/test_pipeline.py::TestNER::test_money_inr_suffix PASSED             [ 27%]
+test/test_pipeline.py::TestNER::test_travellers_forward_phrasing PASSED  [ 28%]
+test/test_pipeline.py::TestNER::test_travellers_reverse_phrasing PASSED  [ 29%]
+test/test_pipeline.py::TestNER::test_travellers_family_of PASSED         [ 29%]
+test/test_pipeline.py::TestNER::test_travellers_solo PASSED              [ 30%]
+test/test_pipeline.py::TestNER::test_travellers_group_of PASSED          [ 31%]
+test/test_pipeline.py::TestNER::test_travel_mode_flight PASSED           [ 31%]
+test/test_pipeline.py::TestNER::test_travel_mode_car PASSED              [ 32%]
+test/test_pipeline.py::TestNER::test_bare_city_is_not_treated_as_origin XFAIL [ 33%]
+test/test_pipeline.py::TestNER::test_named_hill_station_is_not_vague XFAIL [ 33%]
+test/test_pipeline.py::TestIntentRules::test_greeting_rule_fires PASSED  [ 34%]
+test/test_pipeline.py::TestIntentRules::test_good_morning_rule_fires PASSED [ 35%]
+test/test_pipeline.py::TestIntentRules::test_duration_phrase_hits_provide_slot_rule PASSED [ 35%]
+test/test_pipeline.py::TestIntentRules::test_suggest_plus_duration_stays_recommendations PASSED [ 36%]
+test/test_pipeline.py::TestIntentRules::test_numeric_pick_requires_candidates PASSED [ 37%]
+test/test_pipeline.py::TestIntentRules::test_numeric_pick_with_candidates PASSED [ 37%]
+test/test_pipeline.py::TestIntentRules::test_more_relaxed_is_change_pace_not_show_more PASSED [ 38%]
+test/test_pipeline.py::TestIntentRules::test_remove_stop_rule PASSED     [ 38%]
+test/test_pipeline.py::TestIntentRules::test_weather_rule PASSED         [ 39%]
+test/test_pipeline.py::TestChoiceNormalization::test_preamble_is_stripped PASSED [ 40%]
+test/test_pipeline.py::TestChoiceNormalization::test_ordinals_resolve_to_digits PASSED [ 40%]
+test/test_pipeline.py::TestChoiceNormalization::test_bare_digit_is_preserved PASSED [ 41%]
+test/test_pipeline.py::TestChoiceNormalization::test_bare_name_is_preserved PASSED [ 42%]
+test/test_pipeline.py::TestChoiceNormalization::test_empty_input PASSED  [ 42%]
+test/test_pipeline.py::TestToolRouter::test_single_named_destination_auto_confirms PASSED [ 43%]
+test/test_pipeline.py::TestToolRouter::test_single_candidate_from_discovery_is_not_auto_confirmed PASSED [ 44%]
+test/test_pipeline.py::TestToolRouter::test_confirm_normalises_preamble PASSED [ 44%]
+test/test_pipeline.py::TestToolRouter::test_confirm_ordinal PASSED       [ 45%]
+test/test_pipeline.py::TestToolRouter::test_confirm_last_ordinal PASSED  [ 46%]
+test/test_pipeline.py::TestToolRouter::test_missing_slot_prompt_uses_correct_key PASSED [ 46%]
+test/test_pipeline.py::TestToolRouter::test_greet_responds_shortly PASSED [ 47%]
+test/test_pipeline.py::TestToolRouter::test_weather_without_destination_prompts_for_it PASSED [ 48%]
+test/test_pipeline.py::TestToolRouter::test_weather_with_destination_but_no_dates_prompts_dates PASSED [ 48%]
+test/test_pipeline.py::TestToolRouter::test_show_more_without_candidates_says_so PASSED [ 49%]
+test/test_pipeline.py::TestToolRouter::test_build_itinerary_without_destination_prompts PASSED [ 50%]
+test/test_pipeline.py::TestFormatterContracts::test_format_itinerary_matches_scheduler_output PASSED [ 50%]
+test/test_pipeline.py::TestFormatterContracts::test_format_itinerary_renders_excluded_list PASSED [ 51%]
+test/test_pipeline.py::TestFormatterContracts::test_format_transport_matches_transport_payload PASSED [ 51%]
+test/test_pipeline.py::TestFormatterContracts::test_format_transport_falls_back_to_low_high PASSED [ 52%]
+test/test_pipeline.py::TestFormatterContracts::test_format_budget_matches_estimate_payload PASSED [ 53%]
+test/test_pipeline.py::TestFormatterContracts::test_format_recommendations_matches_get_recommendations_payload PASSED [ 53%]
+test/test_pipeline.py::TestFormatterContracts::test_format_weather_handles_empty_days PASSED [ 54%]
+test/test_pipeline.py::TestFormatterContracts::test_format_weather_produces_advice PASSED [ 55%]
+test/test_pipeline.py::TestStateInvariants::test_missing_required_uses_plural_key PASSED [ 55%]
+test/test_pipeline.py::TestStateInvariants::test_missing_required_reports_dates_not_start_only PASSED [ 56%]
+test/test_pipeline.py::TestStateInvariants::test_missing_required_empty_when_complete PASSED [ 57%]
+test/test_pipeline.py::TestStateInvariants::test_n_days_is_inclusive PASSED [ 57%]
+test/test_pipeline.py::TestStateInvariants::test_n_days_is_none_without_dates PASSED [ 58%]
+test/test_pipeline.py::TestStateInvariants::test_summary_exposes_missing_required PASSED [ 59%]
+test/test_pipeline.py::TestStateInvariants::test_summary_digest_excludes_full_recommendations PASSED [ 59%]
+test/test_pipeline.py::TestOverpassFixes::test_bbox_around_produces_symmetric_box PASSED [ 60%]
+test/test_pipeline.py::TestOverpassFixes::test_bbox_respects_longitude_compression PASSED [ 61%]
+test/test_pipeline.py::TestOverpassFixes::test_query_template_uses_bbox PASSED [ 61%]
+test/test_pipeline.py::TestOverpassFixes::test_query_template_is_node_only PASSED [ 62%]
+test/test_pipeline.py::TestEndToEnd::test_munnar_journey_slots_to_recommendations PASSED [ 62%]
+test/test_pipeline.py::TestEndToEnd::test_travellers_reverse_phrasing_updates_state PASSED [ 63%]
+test/test_pipeline.py::TestActivityModel::test_measured_ascent_alone_marks_a_trek PASSED [ 64%]
+test/test_pipeline.py::TestActivityModel::test_model_and_ascent_agree PASSED [ 64%]
+test/test_pipeline.py::TestActivityModel::test_flat_stop_is_not_a_trek PASSED [ 65%]
+test/test_pipeline.py::TestActivityModel::test_unknown_class_is_rejected PASSED [ 66%]
+test/test_pipeline.py::TestActivityModel::test_intensity_and_duration_are_clamped PASSED [ 66%]
+test/test_pipeline.py::TestActivityModel::test_missing_duration_is_rejected_not_defaulted_to_zero PASSED [ 67%]
+test/test_pipeline.py::TestActivityClassification::test_one_call_classifies_the_whole_pool PASSED [ 68%]
+test/test_pipeline.py::TestActivityClassification::test_cache_prevents_a_second_call PASSED [ 68%]
+test/test_pipeline.py::TestActivityClassification::test_peaks_come_back_as_treks PASSED [ 69%]
+test/test_pipeline.py::TestActivityClassification::test_unparseable_answer_falls_back_without_raising PASSED [ 70%]
+test/test_pipeline.py::TestActivityClassification::test_classifier_raising_is_contained PASSED [ 70%]
+test/test_pipeline.py::TestActivityClassification::test_hallucinated_stop_is_ignored PASSED [ 71%]
+test/test_pipeline.py::TestActivityClassification::test_skip_is_not_a_visit PASSED [ 72%]
+test/test_pipeline.py::TestOneTrekPerDay::test_no_day_ever_holds_two_treks PASSED [ 72%]
+test/test_pipeline.py::TestOneTrekPerDay::test_the_three_northern_peaks_are_split PASSED [ 73%]
+test/test_pipeline.py::TestOneTrekPerDay::test_excess_treks_are_reported_with_a_reason PASSED [ 74%]
+test/test_pipeline.py::TestOneTrekPerDay::test_high_adventure_level_keeps_one_trek_per_day PASSED [ 74%]
+test/test_pipeline.py::TestOneTrekPerDay::test_days_mix_activity_classes PASSED [ 75%]
+test/test_pipeline.py::TestOneTrekPerDay::test_rule_holds_across_paces PASSED [ 75%]
+test/test_pipeline.py::TestOneTrekPerDay::test_rule_survives_a_dead_classifier PASSED [ 76%]
+test/test_pipeline.py::TestOneTrekPerDay::test_validation_reports_the_rule_held PASSED [ 77%]
+test/test_pipeline.py::TestEffortFeasibility::test_no_day_exceeds_the_effort_cap PASSED [ 77%]
+test/test_pipeline.py::TestEffortFeasibility::test_a_lone_trek_always_fits_its_own_day PASSED [ 78%]
+test/test_pipeline.py::TestEffortFeasibility::test_effort_is_spread_across_days PASSED [ 79%]
+test/test_pipeline.py::TestTimeline::test_every_stop_has_in_and_out_times PASSED [ 79%]
+test/test_pipeline.py::TestTimeline::test_time_out_equals_in_plus_visit PASSED [ 80%]
+test/test_pipeline.py::TestTimeline::test_times_are_monotonic_within_a_day PASSED [ 81%]
+test/test_pipeline.py::TestTimeline::test_lunch_falls_at_midday PASSED   [ 81%]
+test/test_pipeline.py::TestTimeline::test_days_end_inside_the_window_or_are_flagged PASSED [ 82%]
+test/test_pipeline.py::TestTimeline::test_trek_days_start_early PASSED   [ 83%]
+test/test_pipeline.py::TestTimeline::test_timeline_is_deterministic PASSED [ 83%]
+test/test_pipeline.py::TestTimeline::test_no_network_falls_back_to_distance_over_speed PASSED [ 84%]
+test/test_pipeline.py::TestTimeline::test_real_road_durations_are_used_when_present PASSED [ 85%]
+test/test_pipeline.py::TestTimeline::test_every_day_with_stops_gets_a_lunch PASSED [ 85%]
+test/test_pipeline.py::TestItineraryFormatter::test_renders_times_activity_and_effort PASSED [ 86%]
+test/test_pipeline.py::TestItineraryFormatter::test_lists_unscheduled_stops_with_reasons PASSED [ 87%]
+test/test_pipeline.py::TestItineraryFormatter::test_formatter_works_through_an_instance PASSED [ 87%]
+test/test_pipeline.py::TestItineraryFormatter::test_still_accepts_plain_string_stops PASSED [ 88%]
+test/test_schedule_quality.py::TestDayOrdering::test_chain_starts_at_the_day_nearest_the_base PASSED [ 88%]
+test/test_schedule_quality.py::TestDayOrdering::test_rain_decides_when_the_chain_is_symmetric PASSED [ 89%]
+test/test_schedule_quality.py::TestDayOrdering::test_rest_days_do_not_break_the_chain PASSED [ 90%]
+test/test_schedule_quality.py::TestSequencing::test_the_way_home_is_costed PASSED [ 90%]
+test/test_schedule_quality.py::TestSequencing::test_two_stops_start_with_the_nearer_one PASSED [ 91%]
+test/test_schedule_quality.py::TestCohesion::test_tight_pairs_share_a_day PASSED [ 92%]
+test/test_schedule_quality.py::TestRetimeDay::test_rebuilt_day_keeps_clock_shape PASSED [ 92%]
+test/test_schedule_quality.py::TestRetimeDay::test_emptied_day_becomes_a_rest_day PASSED [ 93%]
+test/test_schedule_quality.py::TestMeals::test_every_day_carries_breakfast_and_dinner PASSED [ 94%]
+test/test_schedule_quality.py::TestMeals::test_half_board_eats_at_the_stay PASSED [ 94%]
+test/test_schedule_quality.py::TestMeals::test_breakfast_only_plan_still_suggests_dinner PASSED [ 95%]
+test/test_schedule_quality.py::TestMeals::test_unspecified_meal_plan_never_claims_inclusion PASSED [ 96%]
+test/test_schedule_quality.py::TestMeals::test_rest_day_keeps_both_meals_near_the_stay PASSED [ 96%]
+test/test_schedule_quality.py::test_move_heals_days_missing_meals PASSED [ 97%]
+test/test_schedule_quality.py::TestMoveStop::test_move_between_days_retimes_both PASSED [ 98%]
+test/test_schedule_quality.py::TestMoveStop::test_moving_the_only_stop_leaves_a_rest_day PASSED [ 98%]
+test/test_schedule_quality.py::TestMoveStop::test_unknown_stop_is_rejected_without_mutation PASSED [ 99%]
+test/test_schedule_quality.py::TestMoveStop::test_day_out_of_range_is_rejected PASSED [100%]
+
+================================== FAILURES ===================================
+_________________________________ test_gemini _________________________________
+
+    def test_gemini():
+>       client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+test\test_api.py:9: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = environ({'ALLUSERSPROFILE': 'C:\\ProgramData', 'APPDATA': 'C:\\Users\\HARIRAAM\\AppData\\Roaming', 'CODEBUFF_TREE_SITT...INIT_AT_FORK': 'FALSE', 'KMP_DUPLICATE_LIB_OK': 'True', 'PYTEST_CURRENT_TEST': 'test/test_api.py::test_gemini (call)'})
+key = 'GEMINI_API_KEY'
+
+>   ???
+E   KeyError: 'GEMINI_API_KEY'
+
+<frozen os>:685: KeyError
+_________________________________ test_places _________________________________
+
+    def test_places():
+        r = requests.post(
+            "https://places.googleapis.com/v1/places:searchText",
+            headers={
+                "Content-Type": "application/json",
+>               "X-Goog-Api-Key": os.environ["GOOGLE_PLACES_API_KEY"],
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                "X-Goog-FieldMask": "places.displayName,places.rating,places.userRatingCount",
+            },
+            json={"textQuery": "hill stations near Manali"},
+            timeout=10,
+        )
+
+test\test_api.py:21: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = environ({'ALLUSERSPROFILE': 'C:\\ProgramData', 'APPDATA': 'C:\\Users\\HARIRAAM\\AppData\\Roaming', 'CODEBUFF_TREE_SITT...INIT_AT_FORK': 'FALSE', 'KMP_DUPLICATE_LIB_OK': 'True', 'PYTEST_CURRENT_TEST': 'test/test_api.py::test_places (call)'})
+key = 'GOOGLE_PLACES_API_KEY'
+
+>   ???
+E   KeyError: 'GOOGLE_PLACES_API_KEY'
+
+<frozen os>:685: KeyError
+___________________________ test_routing_benchmark ____________________________
+
+    def test_routing_benchmark():
+        router = ToolCallRouter()
+        state = TripState()
+    
+        test_cases = [
+            # (Query, Expected Target, Expected Tool or Category)
+            ("what is the weather in ooty from 20-9 to 25-9", "nlp", "ask_weather"),
+            ("show transport from chennai to munnar", "nlp", "ask_transport"),
+            ("make a plan from tirunelveli to any hill station from 20-9 to 25-9 for 4 members under 40k", "nlp", "provide_slot"),
+            ("option 1", "nlp", "confirm_destination"),
+            ("change pace to relaxed", "nlp", "change_pace"),
+            ("how much will a 5-day trip to ooty cost for 4 people", "nlp", "ask_budget"),
+            ("find hill stations near tirunelveli", "nlp", "search_destination_candidates"),
+            ("show top attractions and sightseeing in ooty", "nlp", "request_recommendations"),
+    
+            # Open-ended / Reasoning -> LLM
+            ("Can you compare Ooty vs Kodaikanal for a quiet family trip with elderly grandparents?", "llm", None),
+            ("Tell me an interesting story about the local culture in Munnar", "llm", None),
+            ("What should I pack for cold rainy weather in the hills?", "llm", None),
+            ("Is it safe to drive self-drive cars up the hairpin bends during the monsoon?", "llm", None),
+        ]
+    
+        passed = 0
+        for query, expected_target, expected_tool in test_cases:
+            nlu_res = understand(query, state)
+            decision = router.decide(query, nlu_res, state)
+    
+            assert decision.target == expected_target, (
+                f"Query: '{query}'\nExpected target: {expected_target}, got: {decision.target}\n"
+                f"Scores: NLP={decision.nlp_score}, LLM={decision.llm_score}, Reasons={decision.reasons}"
+            )
+            if expected_tool and decision.suggested_tool:
+>               assert decision.suggested_tool == expected_tool, (
+                    f"Query: '{query}'\nExpected tool: {expected_tool}, got: {decision.suggested_tool}"
+                )
+E               AssertionError: Query: 'what is the weather in ooty from 20-9 to 25-9'
+E                 Expected tool: ask_weather, got: provide_slot
+E               assert 'provide_slot' == 'ask_weather'
+E                 
+E                 - ask_weather
+E                 + provide_slot
+
+test\test_in_between_router.py:47: AssertionError
+__________________________ test_candidate_pagination __________________________
+
+    def test_candidate_pagination():
+        state = TripState()
+        orch = Orchestrator(state)
+    
+        # Turn 1: Initial vague destination search
+        reply1 = orch.chat("make a plan from tirunelveli to any hill station from 20-9 to 25-9 for 4 members under 40k")
+        print("--- TURN 1 ---")
+        print(reply1)
+>       assert "Manjolai" in reply1
+E       assert 'Manjolai' in "Could not find destinations near Tirunelveli: could not geocode origin 'Tirunelveli'"
+
+test\test_pagination.py:16: AssertionError
+---------------------------- Captured stdout call -----------------------------
+[model] groq:openai/gpt-oss-120b
+[warn] could not list Groq models: Connection error.
+--- TURN 1 ---
+Could not find destinations near Tirunelveli: could not geocode origin 'Tirunelveli'
+=========================== short test summary info ===========================
+FAILED test/test_api.py::test_gemini - KeyError: 'GEMINI_API_KEY'
+FAILED test/test_api.py::test_places - KeyError: 'GOOGLE_PLACES_API_KEY'
+FAILED test/test_in_between_router.py::test_routing_benchmark - AssertionErro...
+FAILED test/test_pagination.py::test_candidate_pagination - assert 'Manjolai'...
+============ 4 failed, 148 passed, 2 xfailed in 205.73s (0:03:25) =============

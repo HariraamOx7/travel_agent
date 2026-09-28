@@ -14,8 +14,10 @@ import math
 import re
 import time
 from datetime import date, timedelta
+from typing import Optional
 
 from agent.state import Destination, DestinationCandidate, TripState
+from agent.ner import clean_place_name
 from agent import geo, scheduler as scheduler_mod
 from agent import pois as pois_mod
 from agent import weather
@@ -74,6 +76,37 @@ def _already_set(state: TripState, key: str, value) -> bool:
     # Fallback: strict equality.
     return cur == value
 
+def _resolve_destination(name: str, state: TripState) -> Destination:
+    """Turn a user/LLM-supplied place name into a Destination.
+
+    A pending candidate is preferred over a fresh geocode: candidates were
+    already resolved and verified by the discovery stage, so re-geocoding
+    them risks a name collision ("Ponmudi Both", "See Manjolai") landing in
+    state with no coordinates.
+    """
+    clean = clean_place_name(name)
+    for c in (state.destination_candidates or []):
+        if c.name.lower() == clean.lower() and c.lat is not None:
+            return Destination(
+                name=c.name,
+                place_id=getattr(c, "place_id", None),
+                lat=c.lat,
+                lng=c.lng,
+            )
+    try:
+        rec = geo.geocode(clean)
+    except Exception:
+        rec = None
+    if rec and rec.get("lat") is not None:
+        return Destination(
+            name=rec.get("name") or clean,
+            place_id=rec.get("place_id"),
+            lat=rec["lat"],
+            lng=rec["lng"],
+        )
+    return Destination(name=clean)
+
+
 def extract_trip_slots(args: dict, state: TripState) -> dict:
     """Apply LLM-extracted slot values to state. Only keys present in args
     are touched. Values that fail validation are reported via `rejected`.
@@ -96,15 +129,22 @@ def extract_trip_slots(args: dict, state: TripState) -> dict:
             applied.append("origin")
             if not state.origin_coords:
                 try:
-                    rec = geo.geocode(val)
-                    if rec and "lat" in rec and rec.get("lat") is not None:
-                        state.origin_coords = {"lat": rec["lat"], "lng": rec["lng"]}
+                    _geocode_origin(state)
                 except Exception:
                     pass
 
     # --- destination ---------------------------------------------------- #
-    destinations_list = list(args.get("destinations_list") or [])
-    if "destination_raw" in args and args["destination_raw"]:
+    destinations_list = [clean_place_name(str(n)) for n in (args.get("destinations_list") or [])
+                         if str(n).strip()]
+    if len(destinations_list) > 1 and not args.get("destination_raw"):
+        # The caller gave the multi-destination list without a raw string
+        # (LLM tool calls do this); treat it as an explicit selection.
+        dests = [_resolve_destination(n, state) for n in destinations_list]
+        state.destinations = dests
+        state.destination_candidates = []
+        state.pending_destination_query = None
+        applied.append(f"destinations({', '.join(d.name for d in dests)})")
+    elif "destination_raw" in args and args["destination_raw"]:
         raw = str(args["destination_raw"]).strip()
         is_vague = bool(args.get("destination_is_vague")) or any(
             v in raw.lower() for v in ["hill station", "hillstation", "hills", "beach", "beaches", "anywhere", "somewhere"]
@@ -124,61 +164,28 @@ def extract_trip_slots(args: dict, state: TripState) -> dict:
             if not destinations_list:
                 parts = [re.sub(r"^(?:and|&)\s+", "", p.strip(), flags=re.I).strip()
                          for p in re.split(r",|\b(?:and|&)\b", raw, flags=re.I)]
-                destinations_list = [p.title() for p in parts if p and p.lower() not in {"the", "a", "an"}]
+                destinations_list = [clean_place_name(p) for p in parts
+                                     if p and p.lower() not in {"the", "a", "an"}]
+            # "see manjolai and ponmudi both" -> the split leaves filler on
+            # each end; clean before resolving so names geocode/matched.
+            destinations_list = [clean_place_name(n) for n in destinations_list]
+            destinations_list = [n for n in destinations_list if n]
             if len(destinations_list) > 1:
-                dests = []
-                for d_name in destinations_list:
-                    try:
-                        rec = geo.geocode(d_name)
-                    except Exception:
-                        rec = None
-                    if rec and "lat" in rec and rec.get("lat") is not None:
-                        dests.append(Destination(
-                            name=rec.get("name") or d_name,
-                            place_id=rec.get("place_id"),
-                            lat=rec["lat"],
-                            lng=rec["lng"],
-                        ))
-                    else:
-                        dests.append(Destination(name=d_name))
+                dests = [_resolve_destination(d_name, state)
+                         for d_name in destinations_list]
                 state.destinations = dests
                 state.destination_candidates = []
                 state.pending_destination_query = None
                 applied.append(f"destinations({', '.join(d.name for d in dests)})")
             elif destinations_list:
-                d_name = destinations_list[0]
-                try:
-                    rec = geo.geocode(d_name)
-                except Exception:
-                    rec = None
-                if rec and "lat" in rec and rec.get("lat") is not None:
-                    state.destinations = [Destination(
-                        name=rec.get("name") or d_name,
-                        place_id=rec.get("place_id"),
-                        lat=rec["lat"],
-                        lng=rec["lng"],
-                    )]
-                else:
-                    state.destinations = [Destination(name=d_name)]
+                state.destinations = [_resolve_destination(destinations_list[0], state)]
                 state.destination_candidates = []
                 state.pending_destination_query = None
                 applied.append(f"destinations({state.destinations[0].name})")
         else:
             # Specific destination name (e.g. "Munnar", "Goa")
             # Geocode and set directly in state.destinations so it is confirmed immediately
-            try:
-                rec = geo.geocode(raw)
-            except Exception:
-                rec = None
-            if rec and "lat" in rec and rec.get("lat") is not None:
-                state.destinations = [Destination(
-                    name=rec.get("name") or raw.title(),
-                    place_id=rec.get("place_id"),
-                    lat=rec["lat"],
-                    lng=rec["lng"],
-                )]
-            else:
-                state.destinations = [Destination(name=raw.title())]
+            state.destinations = [_resolve_destination(raw, state)]
             state.destination_candidates = []
             state.pending_destination_query = None
             applied.append(f"destinations({state.destinations[0].name})")
@@ -308,6 +315,24 @@ def extract_trip_slots(args: dict, state: TripState) -> dict:
 
 from agent import discovery as discovery_mod
 
+def _geocode_origin(state: TripState) -> Optional[dict]:
+    """Geocode state.origin into state.origin_coords.
+
+    The geocoder may resolve a misspelled city ("Tiruneveli") to its correct
+    spelling — when it does, the trip state adopts the canonical name so the
+    reply and every later message use it.
+    """
+    rec = geo.geocode(state.origin) if state.origin else None
+    if not rec or (isinstance(rec, dict) and "error" in rec) \
+            or rec.get("lat") is None:
+        state.origin_coords = None
+        return None
+    if rec.get("corrected_from"):
+        state.origin = rec.get("name") or state.origin
+    state.origin_coords = {"lat": rec["lat"], "lng": rec["lng"]}
+    return rec
+
+
 def search_destination_candidates(args: dict, state: TripState) -> dict:
     """Discover real places near the origin via Overpass (with a GeoNames
     fallback), then expose them as state.destination_candidates.
@@ -319,12 +344,8 @@ def search_destination_candidates(args: dict, state: TripState) -> dict:
         return {"error": "origin required before searching for destinations"}
 
     # --- Geocode origin if we don't already have coords ----------------
-    if not state.origin_coords:
-        rec = geo.geocode(state.origin)
-        if not rec or (isinstance(rec, dict) and "error" in rec) \
-                or rec.get("lat") is None:
-            return {"error": f"could not geocode origin '{state.origin}'"}
-        state.origin_coords = {"lat": rec["lat"], "lng": rec["lng"]}
+    if not state.origin_coords and not _geocode_origin(state):
+        return {"error": f"could not geocode origin '{state.origin}'"}
 
     origin_lat = state.origin_coords["lat"]
     origin_lng = state.origin_coords["lng"]
@@ -402,6 +423,20 @@ def search_destination_candidates(args: dict, state: TripState) -> dict:
             "origin for each. Ask the user to pick one by number."
         ),
     }
+# Whole-list picks that confirm_destination expands to every pending
+# candidate — the LLM sometimes passes these verbatim ("both", "all").
+_ALL_PICK_TOKEN = re.compile(
+    r"^(?:all(?:\s+of\s+(?:them|these|the\s+(?:above|list)))?|"
+    r"all\s+(?:options?|places?|destinations?)|each\s+of\s+them|"
+    r"everything|the\s+(?:whole|entire)\s+list)$", re.I,
+)
+_TWO_PICK_TOKEN = re.compile(
+    r"^(?:both(?:\s+(?:of\s+)?(?:them|these))?|"
+    r"both\s+(?:options?|places?|destinations?)|"
+    r"two\s+of\s+them|the\s+two)$", re.I,
+)
+
+
 def confirm_destination(args: dict, state: TripState) -> dict:
     """Lock in the user's pick(s) from state.destination_candidates.
 
@@ -435,6 +470,18 @@ def confirm_destination(args: dict, state: TripState) -> dict:
 
     for token in tokens:
         cand = None
+
+        # Whole-list pick: "all …" always selects everything; "both" only
+        # counts with exactly two candidates (else it is unmatched → the
+        # caller sees the candidate list and can re-ask).
+        if _ALL_PICK_TOKEN.match(token) or (
+                _TWO_PICK_TOKEN.match(token)
+                and len(state.destination_candidates) == 2):
+            for c in state.destination_candidates:
+                if c.name not in already_picked:
+                    already_picked.add(c.name)
+                    picked.append(c)
+            continue
 
         # Numeric index — 1-based.
         if token.isdigit():
@@ -1259,11 +1306,7 @@ def recommend_transport(args: dict, state: TripState) -> dict:
 
     # Geocode origin on first use; cache in state.
     if not state.origin_coords:
-        rec = geo.geocode(state.origin)
-        if rec and "error" not in rec and rec.get("lat") is not None:
-            state.origin_coords = {"lat": rec["lat"], "lng": rec["lng"]}
-        else:
-            state.origin_coords = None
+        _geocode_origin(state)
 
     oc = state.origin_coords
     if not oc:

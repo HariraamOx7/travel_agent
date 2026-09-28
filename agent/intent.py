@@ -156,6 +156,12 @@ TRAINING_DATA = [
     ("Kodaikanal it is", "confirm_destination"),
     ("we'll go with Ooty", "confirm_destination"),
     ("choose Munnar", "confirm_destination"),
+    ("1 and 2", "confirm_destination"),
+    ("1, 3 and 4", "confirm_destination"),
+    ("both", "confirm_destination"),
+    ("both of them", "confirm_destination"),
+    ("all of them", "confirm_destination"),
+    ("ooty and munnar", "confirm_destination"),
 
     # ------------------------------------------------------------------ #
     # ask_transport — user wants transport options

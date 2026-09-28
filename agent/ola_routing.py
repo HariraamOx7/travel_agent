@@ -31,7 +31,8 @@ Design
 ------
 - Never raises. Any failure returns None so the scheduler falls back to
   haversine × 1.4 without surfacing an error to the user.
-- Respects Ola's 25-point matrix cap. If coords exceed 25, the matrix
+- Respects Ola's 50 origin-destination pair cap. Requests use blocks of
+  at most 7×7 pairs. If coords exceed 7, the matrix
   is chunked; if that's too slow, the caller may prefer haversine.
 - Chunked requests preserve coordinates order in the output.
 """
@@ -53,7 +54,9 @@ OLA_MATRIX_URL = "https://api.olamaps.io/routing/v1/distanceMatrix"
 
 _CACHE_DIR = "cache/road_matrix"
 _CACHE_TTL_S = 7 * 24 * 3600      # 7 days
-_MAX_POINTS_PER_CALL = 25
+# Ola caps each Distance Matrix request at 50 origin-destination pairs.
+# 7×7 blocks stay below that limit (49 pairs).
+_MAX_POINTS_PER_CALL = 7
 
 
 # --------------------------------------------------------------------------- #
@@ -159,7 +162,10 @@ def _call_matrix(
         print("  [ola/matrix] rate limited", flush=True)
         return None
     if r.status_code != 200:
-        print(f"  [ola/matrix] HTTP {r.status_code}", flush=True)
+        # The provider's error body usually explains malformed requests;
+        # keep it short and never log the request URL (which contains the key).
+        detail = " ".join(r.text.split())[:300]
+        print(f"  [ola/matrix] HTTP {r.status_code}: {detail}", flush=True)
         return None
 
     try:
@@ -225,7 +231,7 @@ def batch_matrix(
         print(f"  [ola/matrix] cache hit ({n}×{n})", flush=True)
         return cached["distance"], cached["duration"]
 
-    # Single-call path (the common case: n ≤ 25).
+    # Single-call path (a square matrix must fit within the 50-pair cap).
     if n <= _MAX_POINTS_PER_CALL:
         t0 = time.time()
         m = _call_matrix(coords)

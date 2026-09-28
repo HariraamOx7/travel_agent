@@ -28,7 +28,7 @@ from agent import tools
 # words — "choose option 2" reduces all the way to "2", not "option 2".
 _PICK_PREAMBLE = re.compile(
     r"^(?:(?:let'?s\s+go\s+with|go\s+with|i'?ll\s+take|i\s+pick|i\s+choose|"
-    r"choose|select|pick|option|number|#)\s+)+",
+    r"choose|select|pick|options?|numbers?|#)\s+)+",
     re.I,
 )
 _ORDINAL_PICK = re.compile(
@@ -104,6 +104,7 @@ class ToolRouter:
                     else:
                         name_str = ", ".join(names[:-1]) + f", and {names[-1]}"
 
+                    dest_word = "destination" if len(names) == 1 else "destinations"
                     missing = res.get("missing_required") or []
                     if missing:
                         prompts = {
@@ -113,7 +114,7 @@ class ToolRouter:
                             "budget": "What is your approximate budget for the trip in INR?",
                         }
                         next_q = prompts.get(missing[0], f"Could you provide your {missing[0]}?")
-                        reply = f"Confirmed {name_str} as your destination. Next — {next_q}"
+                        reply = f"Confirmed {name_str} as your {dest_word}. Next — {next_q}"
                     else:
                         state.stage = "recommending"
                         reply = (
@@ -123,6 +124,32 @@ class ToolRouter:
                     return True, reply, "confirm_destination", res
 
                 return False, None, None, None
+
+            # No candidates pending, but destinations are already locked in:
+            # a redundant "both"/"all" (or a repeat of what we already took)
+            # should be acknowledged, not escalated to the LLM.
+            if len(state.destinations) >= 2:
+                names = [d.name for d in state.destinations]
+                name_str = (f"{names[0]} and {names[1]}" if len(names) == 2
+                            else ", ".join(names[:-1]) + f", and {names[-1]}")
+                missing = state.missing_required()
+                if missing:
+                    prompts = {
+                        "origin": "Where will you be starting your trip from?",
+                        "destinations": "Where would you like to travel?",
+                        "dates": "What are your travel dates (start and end date)?",
+                        "budget": "What is your approximate budget for the trip in INR?",
+                    }
+                    next_q = prompts.get(missing[0], f"Could you provide your {missing[0]}?")
+                    return True, (
+                        f"{name_str} are already set as your destinations. "
+                        f"Next — {next_q}"
+                    ), "confirm_destination", None
+                return True, (
+                    f"{name_str} are already set as your destinations — all "
+                    "required details are in. Would you like me to pull up "
+                    "attractions and stay recommendations?"
+                ), "confirm_destination", None
 
         # ------------------------------------------------------------------ #
         # 2b. Show More Destination Candidates (Pagination)
@@ -249,23 +276,32 @@ class ToolRouter:
         # ------------------------------------------------------------------ #
         if intent == "build_itinerary":
             dest = state.destinations[0] if state.destinations else None
-            if not dest:
+            # Nothing to build yet. If this turn also carried trip details
+            # (a destination request, dates, an origin…) let it fall through
+            # to the slot handler below, which discovers destinations or asks
+            # the next concrete question — a flat "confirm a destination and
+            # dates first" is a dead end when the user just told us where
+            # they are starting from.
+            if not dest and not (state.pending_destination_query
+                                 or state.destination_candidates
+                                 or nlu_result.has_slots):
                 return True, (
                     "Please confirm a destination and dates first "
                     "before building the itinerary."
                 ), None, None
 
-            if not state.recommendations or not state.recommendations.get("attractions"):
-                self.tool_impls["get_recommendations"]({}, state)
+            if dest:
+                if not state.recommendations or not state.recommendations.get("attractions"):
+                    self.tool_impls["get_recommendations"]({}, state)
 
-            res = self.tool_impls["build_itinerary"]({}, state)
-            if "error" in res:
-                return True, (
-                    f"Could not build itinerary: {res['error']}"
-                ), "build_itinerary", res
+                res = self.tool_impls["build_itinerary"]({}, state)
+                if "error" in res:
+                    return True, (
+                        f"Could not build itinerary: {res['error']}"
+                    ), "build_itinerary", res
 
-            reply = self._format_itinerary(dest.name, res, state)
-            return True, reply, "build_itinerary", res
+                reply = self._format_itinerary(dest.name, res, state)
+                return True, reply, "build_itinerary", res
 
         # ------------------------------------------------------------------ #
         # 6. Transport
@@ -359,7 +395,11 @@ class ToolRouter:
         # ------------------------------------------------------------------ #
         # 10. Provide Slot
         # ------------------------------------------------------------------ #
-        if intent == "provide_slot" or nlu_result.has_slots:
+        # Last branch: slot filling. "build_itinerary" only reaches here when
+        # it had no destination to build (see above), i.e. the user is still
+        # describing the trip.
+        if (intent in ("provide_slot", "build_itinerary")
+                or nlu_result.has_slots):
             dest = state.destinations[0].name if state.destinations else None
 
             # (a) Vague destination pending -> run discovery
@@ -411,8 +451,17 @@ class ToolRouter:
             # destination_candidates). Either way the user sees the full
             # list echoed back — the geocoded names are the canonical
             # forms (e.g. 'Ooty' -> 'Udhagamandalam').
-            if ((len(state.destinations) > 1
-                 or len(state.destination_candidates) > 1)
+            #
+            # Only echo when THIS turn actually named destinations: a later
+            # "4 days from 25-9" must be acknowledged as dates, not answered
+            # with another destination summary (which would leave the trip
+            # stuck without dates forever).
+            slot_keys = set((nlu_result.slots or {}).keys())
+            named_dests = bool(slot_keys & {"destination_raw",
+                                            "destinations_list"})
+            if (named_dests
+                    and (len(state.destinations) > 1
+                         or len(state.destination_candidates) > 1)
                     and (state.destinations or state.destination_candidates)):
                 if state.destinations and len(state.destinations) > 1:
                     names = [d.name for d in state.destinations]
@@ -459,7 +508,9 @@ class ToolRouter:
                 if state.origin:
                     details.append(f"Origin: {state.origin}")
                 if state.destinations:
-                    details.append(f"Destination: {state.destinations[0].name}")
+                    names = [d.name for d in state.destinations]
+                    label = "Destination" if len(names) == 1 else "Destinations"
+                    details.append(f"{label}: {', '.join(names)}")
                 if state.start_date and state.end_date:
                     details.append(f"Dates: {state.start_date} to {state.end_date}")
                 if state.travellers:
@@ -475,7 +526,14 @@ class ToolRouter:
 
             else:
                 # All required slots filled — auto-fire weather + recommendations.
-                dest_name = state.destinations[0].name
+                # Weather/recommendations are keyed off the primary destination,
+                # but the header should name every destination in the trip.
+                dest_short = state.destinations[0].name
+                if len(state.destinations) == 1:
+                    dest_name = dest_short
+                else:
+                    names = [d.name for d in state.destinations]
+                    dest_name = ", ".join(names[:-1]) + f" and {names[-1]}"
 
                 weather_res = self.tool_impls["get_weather"]({}, state)
                 rec_res = self.tool_impls["get_recommendations"]({}, state)
@@ -496,8 +554,8 @@ class ToolRouter:
 
                 parts = [header]
                 if "error" not in weather_res:
-                    parts.append(self._format_weather(dest_name, weather_res, state))
-                parts.append(self._format_recommendations(dest_name, rec_res))
+                    parts.append(self._format_weather(dest_short, weather_res, state))
+                parts.append(self._format_recommendations(dest_short, rec_res))
                 reply = "\n\n".join(parts)
                 return True, reply, "get_recommendations", rec_res
 

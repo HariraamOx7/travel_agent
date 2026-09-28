@@ -23,6 +23,8 @@ import re
 from datetime import date, timedelta
 from typing import Optional
 
+from agent import geo
+
 try:
     import spacy
     try:
@@ -113,11 +115,9 @@ _MODE_KEYWORDS = {
 # Origin / destination
 # --------------------------------------------------------------------------- #
 
-_KNOWN_ORIGINS = [
-    "chennai", "bangalore", "bengaluru", "mumbai", "delhi", "hyderabad",
-    "kolkata", "pune", "kochi", "coimbatore", "madurai", "trivandrum",
-    "kozhikode", "mysore", "mysuru", "goa", "jaipur", "ahmedabad",
-]
+# City vocabulary lives with the geocoder (agent/geo.py) so that a city the
+# NER can detect is also a city the geocoder can repair a misspelling for.
+_KNOWN_ORIGINS = geo.KNOWN_CITIES
 
 # "from X to Y", "X to Y", "travel from X to Y" — capitalised for
 # precision (spaCy-style NER would help, but regex on capitals works well
@@ -299,12 +299,47 @@ def _extract_mode(text: str) -> Optional[str]:
 # Place extraction
 # --------------------------------------------------------------------------- #
 
-def _clean_place_name(s: str) -> str:
-    s = re.sub(r"^(?:the|a|an|any|some)\s+", "", s.strip(), flags=re.I).strip()
+# Natural phrasing leaks filler into the greedy place captures:
+#   "i would like to SEE manjolai and ponmudi BOTH"
+#   -> "See Manjolai" / "Ponmudi Both"
+# Those never geocode, so they would reach TripState with lat/lng = None and
+# break the itinerary/map for a multi-destination trip. Strip the filler.
+_PLACE_LEAD_FILLER = re.compile(
+    r"^(?:(?:and|&|with|to|the|a|an|any|some|see|seeing|visit|visiting|"
+    r"cover|covering|explore|exploring|go|going|tour|including|include|"
+    r"add|adding|travel|traveling|travelling)\s+)+",
+    re.I,
+)
+_PLACE_TAIL_FILLER = re.compile(
+    r"(?:\s+(?:both|too|also|as\s+well|instead|please|aswell))+\s*$",
+    re.I,
+)
+
+
+def clean_place_name(s: str) -> str:
+    """Normalise a captured place name: strip filler words and title-case."""
+    s = _PLACE_TAIL_FILLER.sub("", s.strip())
+    s = _PLACE_LEAD_FILLER.sub("", s.strip())
+    # A tail word can sit behind a lead word ("see ooty also"), so redo the
+    # lead pass once; both regexes are anchored and cheap.
+    s = _PLACE_LEAD_FILLER.sub("", s.strip())
     return s.title()
 
 
+def _clean_place_name(s: str) -> str:
+    return clean_place_name(s)
+
+
+# Misspellings of the "from" keyword. Without this, "plan a trip frmo
+# tirunelveli to any hill station" loses its origin entirely: the from/to
+# pattern never matches, so the origin falls out of the trip state and the
+# destination search has nothing to search around. Only unambiguous typos
+# are listed — a real word like "form" is deliberately not rewritten.
+_FROM_TYPOS = re.compile(r"\b(?:frmo|fromm|frorm|froom|fro)\b", re.I)
+
+
 def _extract_places(text: str, known_origin: Optional[str] = None):
+    text = _FROM_TYPOS.sub("from", text)
     origin = None
     dest_raw = None
     destinations_list = []
@@ -338,13 +373,18 @@ def _extract_places(text: str, known_origin: Optional[str] = None):
         if m_to:
             dest_raw = m_to.group(1).strip()
 
-    # Fallback to known origins if origin not yet found
+    # Fallback to known origins if origin not yet found. A city that is
+    # already the destination is skipped: "trip to Chennai" names a
+    # destination, not an origin.
     if not origin:
         low = text.lower()
         for city in _KNOWN_ORIGINS:
-            if re.search(rf"\b(?:from\s+)?{city}\b", low):
-                origin = city.title()
-                break
+            if not re.search(rf"\b(?:from\s+)?{city}\b", low):
+                continue
+            if dest_raw and re.search(rf"\b{city}\b", dest_raw.lower()):
+                continue
+            origin = city.title()
+            break
 
     # Fallback for "near <city>"
     if origin is None:

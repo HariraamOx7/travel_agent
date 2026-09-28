@@ -61,6 +61,18 @@ _CLIENT_CONNECT_TIMEOUT_S = 5
 _MAX_ATTEMPTS = 2
 _RETRY_DELAY_S = 10
 
+# Total wall-clock budget for ONE fetch, across both paths. Measured live
+# (Sept 2026, all mirrors timing out): racing 31s -> serial 1.8s + 31s +
+# 31s -> 10s sleep -> 28s for a late mirror to win = ~134s. That hung the
+# chat turn that triggered it. Past the budget we stop, serve a stale cache
+# if one exists, and let the caller degrade gracefully.
+_TOTAL_BUDGET_S = 45
+
+# After a total failure, don't make the next caller pay the budget again —
+# the UI re-requests POIs for the map on every turn.
+_FAILURE_COOLDOWN_S = 60
+_last_failure_ts = 0.0
+
 # Response cap. bbox + nodes-only produces fewer raw hits than the old
 # (around:) + way query, so 500 is comfortable.
 _OUT_LIMIT = 500
@@ -155,14 +167,32 @@ def _bbox_around(lat: float, lng: float, radius_km: float) -> tuple:
 # Racing path
 # --------------------------------------------------------------------------- #
 
-def _race_mirrors(q: str) -> Optional[dict]:
+def _read_timeout(deadline: Optional[float]) -> float:
+    """Per-request read timeout, clipped to whatever budget is left."""
+    if deadline is None:
+        return _CLIENT_READ_TIMEOUT_S
+    return max(3.0, min(_CLIENT_READ_TIMEOUT_S, deadline - time.time()))
+
+
+def _load_stale_cache(cache_path: str) -> Optional[dict]:
+    """Read a cache file of ANY age. Used only when the network gave up."""
+    try:
+        with open(cache_path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _race_mirrors(q: str, deadline: Optional[float] = None) -> Optional[dict]:
     """Fire all mirrors concurrently. Return the first non-empty parse.
 
     Pending futures are cancelled as soon as a winner is found — in-flight
     HTTP requests may still complete in the background, but we don't wait
-    for them. Returns None if every mirror fails.
+    for them. Returns None if every mirror fails or the budget runs out.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    read_timeout = _read_timeout(deadline)
 
     def try_one(url: str) -> Optional[dict]:
         host = url.split("/")[2]
@@ -170,7 +200,7 @@ def _race_mirrors(q: str) -> Optional[dict]:
         try:
             resp = requests.post(
                 url, data={"data": q},
-                timeout=(_CLIENT_CONNECT_TIMEOUT_S, _CLIENT_READ_TIMEOUT_S),
+                timeout=(_CLIENT_CONNECT_TIMEOUT_S, read_timeout),
                 headers=HEADERS,
             )
             if resp.status_code != 200:
@@ -217,10 +247,18 @@ def search_pois(lat: float, lng: float, radius_km: float = 15) -> dict:
     original 25 km was pulling in hundreds of low-value suburbs.
 
     Execution order:
-      1. Cache hit (24h TTL) -> return immediately, no network.
+      1. Fresh cache hit (24h TTL) -> return immediately, no network.
       2. Race all mirrors concurrently. First success wins.
       3. If racing fails (all None), fall back to the serial implementation.
+      4. If that fails too, serve a stale cache of any age rather than an
+         error — an out-of-date POI list beats no recommendations.
+
+    The whole thing runs under _TOTAL_BUDGET_S, and a recent total failure
+    short-circuits the next call for _FAILURE_COOLDOWN_S: this function is
+    called synchronously inside a chat turn, so an unbounded retry ladder
+    is indistinguishable from a hung app.
     """
+    global _last_failure_ts
     os.makedirs(_CACHE_DIR, exist_ok=True)
     cache_path = os.path.join(
         _CACHE_DIR, f"pois_{lat:.3f}_{lng:.3f}_{int(radius_km)}.json"
@@ -232,17 +270,38 @@ def search_pois(lat: float, lng: float, radius_km: float = 15) -> dict:
         with open(cache_path, encoding="utf-8") as f:
             return json.load(f)
 
+    cooldown_left = _FAILURE_COOLDOWN_S - (time.time() - _last_failure_ts)
+    if cooldown_left > 0:
+        stale = _load_stale_cache(cache_path)
+        if stale is not None:
+            print("  [overpass] recent failure — serving stale cache", flush=True)
+            return stale
+        print(f"  [overpass] recent failure — skipping network for "
+              f"{cooldown_left:.0f}s", flush=True)
+        return {"error": "Overpass unavailable (cooling down after a "
+                         "recent failure)"}
+
     s, w, n, e = _bbox_around(lat, lng, radius_km)
     q = _QUERY.format(
         t=_SERVER_TIMEOUT_S, s=s, w=w, n=n, e=e, limit=_OUT_LIMIT,
     )
+    deadline = time.time() + _TOTAL_BUDGET_S
 
-    result = _race_mirrors(q)
+    result = _race_mirrors(q, deadline)
 
     if result is None:
         print("  [overpass] racing failed, falling back to serial",
               flush=True)
-        return _search_pois_serial(lat, lng, radius_km)
+        result = _search_pois_serial(lat, lng, radius_km, deadline)
+
+    if isinstance(result, dict) and "error" in result:
+        _last_failure_ts = time.time()
+        stale = _load_stale_cache(cache_path)
+        if stale is not None:
+            print("  [overpass] all mirrors failed — serving stale cache",
+                  flush=True)
+            return stale
+        return result
 
     total = sum(len(v) for v in result.values())
     if total > 0:
@@ -256,10 +315,16 @@ def search_pois(lat: float, lng: float, radius_km: float = 15) -> dict:
 # Serial fallback — original implementation, kept verbatim
 # --------------------------------------------------------------------------- #
 
-def _search_pois_serial(lat: float, lng: float, radius_km: float) -> dict:
+def _search_pois_serial(lat: float, lng: float, radius_km: float,
+                        deadline: Optional[float] = None) -> dict:
     """Original mirror-by-mirror retry loop. Only invoked when racing
     returns None (all mirrors returned nothing or all raised). Uses the
-    same bbox query and constants as the racing path."""
+    same bbox query and constants as the racing path.
+
+    `deadline` (epoch seconds) caps the whole loop: each request's read
+    timeout is clipped to the remaining budget and the loop stops as soon
+    as the budget cannot fit another attempt.
+    """
     os.makedirs(_CACHE_DIR, exist_ok=True)
     cache_path = os.path.join(
         _CACHE_DIR, f"pois_{lat:.3f}_{lng:.3f}_{int(radius_km)}.json"
@@ -281,6 +346,12 @@ def _search_pois_serial(lat: float, lng: float, radius_km: float) -> dict:
 
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         for url in MIRRORS:
+            if deadline is not None and time.time() >= deadline:
+                print("  [overpass/serial] budget spent, stopping", flush=True)
+                return {
+                    "error": "Overpass budget spent: "
+                             + (last_err or "no mirror answered")
+                }
             host = url.split("/")[2]
             t0 = time.time()
             try:
@@ -293,7 +364,7 @@ def _search_pois_serial(lat: float, lng: float, radius_km: float) -> dict:
                     url,
                     data={"data": q},
                     timeout=(_CLIENT_CONNECT_TIMEOUT_S,
-                             _CLIENT_READ_TIMEOUT_S),
+                             _read_timeout(deadline)),
                     headers=HEADERS,
                 )
 
@@ -349,7 +420,16 @@ def _search_pois_serial(lat: float, lng: float, radius_km: float) -> dict:
                 last_err = f"bad JSON: {e}"
                 continue
 
-        # End of one pass. Wait before retrying, unless this was the last.
+        # End of one pass. Wait before retrying, unless this was the last —
+        # or unless the budget can't fit another mirror attempt.
+        remaining = (deadline - time.time()) if deadline is not None else None
+        if remaining is not None and remaining <= _RETRY_DELAY_S + 5:
+            print(
+                f"  [overpass/serial] out of budget "
+                f"({max(remaining, 0):.0f}s left), stopping",
+                flush=True,
+            )
+            break
         if attempt < _MAX_ATTEMPTS:
             print(
                 f"  [overpass/serial] all mirrors failed on attempt "

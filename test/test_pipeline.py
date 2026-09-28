@@ -169,7 +169,6 @@ class TestNER:
         out = ner.extract_entities("we'll drive down")
         assert out["travel_mode"] == "car"
 
-    @pytest.mark.xfail(reason="Bug #3: bare city mention sets origin as well as destination")
     def test_bare_city_is_not_treated_as_origin(self):
         out = ner.extract_entities("I want to go to Chennai")
         assert out.get("origin") != "Chennai"
@@ -672,6 +671,96 @@ class TestOverpassFixes:
         from agent.pois import _QUERY
         assert "way[" not in _QUERY.replace("highway[", ""), \
             "way queries were removed intentionally — see pois.py docstring"
+
+    def test_read_timeout_is_clipped_to_the_remaining_budget(self):
+        """A request may never outlive the fetch budget."""
+        import time as _time
+        from agent import pois
+
+        assert pois._read_timeout(None) == pois._CLIENT_READ_TIMEOUT_S
+        assert pois._read_timeout(_time.time() + 7) <= 7
+        # Never below the connect floor, even with an expired budget.
+        assert pois._read_timeout(_time.time() - 60) == 3.0
+
+    def test_failed_fetch_serves_stale_cache(self, tmp_path, monkeypatch):
+        """All mirrors down, but we cached this spot days ago: the user
+        still gets POIs instead of an empty recommendations panel."""
+        import json
+        import os
+        import time as _time
+        from agent import pois
+
+        stale = {"viewpoints": [{"name": "Kuthiraivetti Falls",
+                                "kind": "attraction", "cat": "viewpoints",
+                                "lat": 8.6, "lng": 77.4}]}
+        cache_file = tmp_path / f"pois_{8.633:.3f}_{77.417:.3f}_15.json"
+        cache_file.write_text(json.dumps(stale), encoding="utf-8")
+        old = _time.time() - 3 * 86400          # past the 24h fresh window
+        os.utime(cache_file, (old, old))
+
+        monkeypatch.setattr(pois, "_CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(pois, "_last_failure_ts", 0.0)
+        monkeypatch.setattr(pois, "_RETRY_DELAY_S", 0)
+        monkeypatch.setattr(pois.requests, "post", _mirror_down)
+
+        assert pois.search_pois(8.633, 77.417, 15) == stale
+
+    def test_failed_fetch_cools_down_instead_of_hammering_mirrors(
+            self, tmp_path, monkeypatch):
+        """The map endpoint re-requests POIs every turn; after a total
+        failure the next call must not spend the budget all over again."""
+        from agent import pois
+
+        calls = {"n": 0}
+
+        def counting_post(*a, **kw):
+            calls["n"] += 1
+            raise pois.requests.Timeout("mirror down")
+
+        monkeypatch.setattr(pois, "_CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(pois, "_last_failure_ts", 0.0)
+        monkeypatch.setattr(pois, "_RETRY_DELAY_S", 0)
+        monkeypatch.setattr(pois.requests, "post", counting_post)
+
+        assert "error" in pois.search_pois(8.633, 77.417, 15)
+        tried = calls["n"]
+        assert tried > 0
+        assert "error" in pois.search_pois(8.633, 77.417, 15)
+        assert calls["n"] == tried, "the cooldown let the mirrors be hit again"
+
+
+    def test_fetch_budget_bounds_the_whole_retry_ladder(
+            self, tmp_path, monkeypatch):
+        """Live worst case was ~134s: racing 31s, then two serial passes of
+        ~31s apiece, a 10s sleep, and finally a mirror winning at 28s — all
+        inside a chat turn. Now the ladder stops at the budget."""
+        import time as _time
+        from agent import pois
+
+        def black_hole(url, data=None, timeout=None, headers=None):
+            # Honour the client's own timeout, like a mirror that accepts
+            # the connection and then never answers.
+            read = timeout[1] if isinstance(timeout, tuple) else timeout
+            _time.sleep(read)
+            raise pois.requests.Timeout("black-holed")
+
+        monkeypatch.setattr(pois, "_CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(pois, "_TOTAL_BUDGET_S", 2)
+        monkeypatch.setattr(pois, "_last_failure_ts", 0.0)
+        monkeypatch.setattr(pois, "_RETRY_DELAY_S", 1)
+        monkeypatch.setattr(pois.requests, "post", black_hole)
+
+        t0 = _time.time()
+        res = pois.search_pois(8.633, 77.417, 15)
+        elapsed = _time.time() - t0
+        assert "error" in res
+        # Budget plus at most one connect-floor (3s) request.
+        assert elapsed < 2 + 3 + 2, elapsed
+
+
+def _mirror_down(*args, **kwargs):
+    from agent import pois
+    raise pois.requests.Timeout("mirror down")
 
 
 # --------------------------------------------------------------------------- #

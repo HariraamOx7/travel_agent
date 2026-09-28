@@ -18,21 +18,27 @@ export default function TripPane({ sessionId, state, trace = [], onStateRefresh 
 
   const budget = state?.recommendations?.budget
   const lineItems = budget?.line_items_inr || {}
+  const totalInr = Number(
+    budget?.total_inr ||
+      Object.values(lineItems).reduce((sum, v) => sum + Number(v || 0), 0) ||
+      0
+  )
 
   return (
-    <div className="flex flex-col bg-surface border border-border rounded-xl overflow-hidden h-full">
-      {/* Tab Navigation Header */}
-      <div className="flex border-b border-border bg-bg/50 px-2 pt-2 gap-1 overflow-x-auto scrollbar-none">
+    <div className="panel flex flex-col overflow-hidden h-full">
+      {/* Tab Navigation Header — segmented pills */}
+      <div className="flex gap-1 p-1.5 border-b border-border bg-bg/40 overflow-x-auto shrink-0">
         {TABS.map((tab) => {
           const isActive = activeTab === tab.id
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-2 text-xs font-medium rounded-t-lg transition whitespace-nowrap ${
+              aria-current={isActive ? 'page' : undefined}
+              className={`px-3 py-1.5 text-xs font-medium rounded-full transition whitespace-nowrap ${
                 isActive
-                  ? 'bg-surface text-accent border-t-2 border-accent font-semibold'
-                  : 'text-muted hover:text-white hover:bg-surface/50'
+                  ? 'bg-accent text-black font-semibold shadow-glow'
+                  : 'text-muted hover:text-white hover:bg-surface'
               }`}
             >
               {tab.label}
@@ -42,7 +48,7 @@ export default function TripPane({ sessionId, state, trace = [], onStateRefresh 
       </div>
 
       {/* Tab Body */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-5 min-h-0">
         {activeTab === 'map' && <MapTab sessionId={sessionId} state={state} />}
 
         {activeTab === 'itinerary' && (
@@ -66,39 +72,56 @@ export default function TripPane({ sessionId, state, trace = [], onStateRefresh 
         {activeTab === 'costs' && (
           <div className="space-y-4">
             {!budget ? (
-              <div className="text-muted text-sm p-4 text-center border border-dashed border-border rounded-xl">
+              <div className="text-muted text-sm p-8 text-center border border-dashed border-border rounded-2xl">
+                <div className="text-2xl mb-2">💰</div>
                 No cost estimate computed yet. Ask the agent in the chat:
                 <div className="text-white font-medium mt-1">"What will this trip cost?"</div>
               </div>
             ) : (
-              <div className="space-y-3 bg-bg border border-border rounded-xl p-4">
-                <div className="font-semibold text-sm pb-2 border-b border-border">
-                  Estimated Breakdown
-                </div>
-                <div className="space-y-2">
-                  {Object.entries(lineItems).map(([item, cost]) => (
-                    <div
-                      key={item}
-                      className="flex justify-between items-center text-sm py-1 border-b border-border/40"
-                    >
-                      <span className="text-muted capitalize">
-                        {item.replace(/_/g, ' ')}
-                      </span>
-                      <span className="font-medium text-white">
-                        ₹{Number(cost).toLocaleString('en-IN')}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex justify-between items-center text-base font-bold pt-2 border-t border-border text-accent">
-                  <span>Total</span>
-                  <span>₹{Number(budget.total_inr || 0).toLocaleString('en-IN')}</span>
-                </div>
-                {budget.verdict && (
-                  <div className="mt-3 p-2.5 rounded bg-accent/10 border border-accent/20 text-accent text-xs">
-                    {budget.verdict}
+              <div className="space-y-4 fade-up">
+                <div className="panel p-4 sm:p-5">
+                  <div className="flex items-baseline justify-between">
+                    <span className="section-title">Estimated breakdown</span>
+                    <span className="text-[11px] text-muted">whole trip</span>
                   </div>
-                )}
+                  <div className="text-3xl font-bold tracking-tight mt-2 tabular-nums">
+                    ₹{totalInr.toLocaleString('en-IN')}
+                  </div>
+                  {budget.verdict && (
+                    <div className="mt-3 p-2.5 rounded-xl bg-accent/10 border border-accent/20 text-accent text-xs leading-relaxed">
+                      {budget.verdict}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  {Object.entries(lineItems).map(([item, cost]) => {
+                    const amount = Number(cost || 0)
+                    const share =
+                      totalInr > 0 ? Math.min(100, (amount / totalInr) * 100) : 0
+                    return (
+                      <div
+                        key={item}
+                        className="bg-bg/70 border border-border rounded-xl px-3.5 py-2.5"
+                      >
+                        <div className="flex justify-between items-center text-sm gap-3">
+                          <span className="text-muted capitalize truncate">
+                            {item.replace(/_/g, ' ')}
+                          </span>
+                          <span className="font-medium text-white tabular-nums shrink-0">
+                            ₹{amount.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                        <div className="mt-2 h-1 rounded-full bg-border/60 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-accent to-amber-400"
+                            style={{ width: `${share}%` }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>

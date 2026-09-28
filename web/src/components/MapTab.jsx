@@ -211,28 +211,50 @@ export default function MapTab({ sessionId, state }) {
     return () => observer.disconnect()
   }, [])
 
+  // Fit the view to one day's stops when its legend pill is clicked.
+  const focusDay = (day) => {
+    const map = mapRef.current
+    if (!map) return
+    const pts = (day.stops || [])
+      .filter((s) => s.lat != null)
+      .map((s) => [s.lat, s.lng])
+    if (pts.length) map.fitBounds(pts, { padding: [70, 70], maxZoom: 13 })
+  }
+
+  const hasItinerary = (data?.itinerary_stops || []).some(
+    (d) => (d.stops || []).some((s) => s.lat != null)
+  )
+
   return (
-    <div className="h-full flex flex-col min-h-0">
-      {/* Day legend — appears once an itinerary exists */}
-      {data?.itinerary_stops?.length > 0 && (
-        <div className="flex flex-wrap gap-3 px-3 py-2 border-b border-border text-xs shrink-0">
-          {data.itinerary_stops.map((day, i) => (
-            <div key={day.day} className="flex items-center gap-2">
-              <span
-                className="inline-block w-3 h-3 rounded-full"
-                style={{ background: DAY_COLORS[i % DAY_COLORS.length] }}
-              />
-              <span className="font-medium">Day {day.day}</span>
-              {day.date && <span className="text-muted">{day.date}</span>}
-            </div>
-          ))}
+    <div className="relative h-full min-h-0 w-full">
+      {/* Map fills the pane; the legend floats above it */}
+      <div ref={containerRef} className="absolute inset-0 rounded-xl overflow-hidden" />
+
+      {/* Day legend — floating pills, click to focus that day */}
+      {hasItinerary && (
+        <div className="absolute top-3 right-3 z-[1200] flex flex-col items-end gap-1.5 pointer-events-none">
+          {data.itinerary_stops.map((day, i) => {
+            const stops = (day.stops || []).filter((s) => s.lat != null)
+            return (
+              <button
+                key={day.day}
+                type="button"
+                disabled={!stops.length}
+                onClick={() => focusDay(day)}
+                title={stops.length ? `Zoom to Day ${day.day}` : undefined}
+                className="pointer-events-auto flex items-center gap-2 bg-bg/85 backdrop-blur-sm border border-border rounded-full px-2.5 py-1 text-xs shadow-card hover:border-accent/60 transition disabled:cursor-default"
+              >
+                <span
+                  className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ background: DAY_COLORS[i % DAY_COLORS.length] }}
+                />
+                <span className="font-medium">Day {day.day}</span>
+                {day.date && <span className="text-muted">{day.date}</span>}
+              </button>
+            )
+          })}
         </div>
       )}
-
-      {/* Map container — flex-1 + min-h-0 so it takes remaining height
-          and can shrink. Without min-h-0, flexbox won't shrink it and
-          the map overflows the pane. */}
-      <div ref={containerRef} className="flex-1 min-h-0 w-full" />
     </div>
   )
 }

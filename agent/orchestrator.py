@@ -9,6 +9,13 @@ from agent.router import ToolCallRouter
 from agent.tool_router import ToolRouter
 from openai import OpenAI, APIStatusError, APIConnectionError
 from groq import Groq
+from groq import APIStatusError as GroqAPIStatusError
+from groq import APIConnectionError as GroqAPIConnectionError
+
+# The Groq SDK mirrors OpenAI's error types but does NOT subclass them, so
+# every except below must catch both families or the whole retry/backoff
+# logic silently never runs on the default provider.
+_STATUS_ERRORS = (APIStatusError, GroqAPIStatusError)
 
 from agent import tools
 from agent.prompts import SYSTEM_PROMPT
@@ -22,6 +29,15 @@ TEMPERATURE = 0.2
 REASONING_EFFORT = "low"     # only sent for gpt-oss models
 MAX_TOKENS = 8192            # reasoning tokens count toward this
 MAX_TOOL_ROUNDS = 6
+
+# Groq's on-demand tier rejects ANY single request over ~8000 TPM with a
+# 413 "Request too large" — and counts prompt + completion together. Every
+# request is therefore fitted to a token budget before it is sent: system
+# prompt + trip state first, then as much recent history as fits. The trip
+# state block IS the agent's memory (the system prompt answers from it, not
+# from earlier assistant messages), so dropping old turns is safe by design.
+PROMPT_TOKEN_BUDGET = 5000    # chars/4 heuristic; leaves headroom below 8000
+GROQ_COMPLETION_CAP = 2816    # PROMPT_TOKEN_BUDGET + this stays under 8000
 
 # Models that are NOT chat models (audio, classifiers, TTS, etc.).
 # We filter these out of the "available models" warning message.
@@ -145,8 +161,138 @@ class Orchestrator:
     # Prompt construction
     # ------------------------------------------------------------------ #
 
-    def _messages(self) -> list[dict]:
-        """State is re-injected fresh on EVERY call — the agent's memory."""
+    # ------------------------------------------------------------------ #
+    # Prompt fitting — stay under the provider's per-request token cap
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _estimate_tokens(message: dict) -> int:
+        """Cheap chars/4 token estimate for one chat message."""
+        content = message.get("content")
+        if not isinstance(content, str):
+            content = (
+                json.dumps(content, default=str)
+                if content is not None
+                else ""
+            )
+        tokens = len(content) // 4 + 4
+        if message.get("tool_calls"):
+            tokens += (
+                len(json.dumps(message["tool_calls"], default=str)) // 4 + 4
+            )
+        return max(tokens, 1)
+
+    @classmethod
+    def _fit_history(cls, messages: list[dict], budget: int) -> list[dict]:
+        """Return a copy of `messages` worth ~`budget` estimated tokens.
+
+        Never mutates the input — trimming is a per-call view, so the full
+        conversation stays intact in memory and on disk.
+
+        Rules:
+          * the system message is always present (trip state lives there);
+          * the newest message is always kept (it is the current turn);
+          * oldest turns drop first, together with any tool results that
+            the drop orphans (a tool message must follow its assistant
+            tool_calls entry and can never open the list);
+          * an over-large middle message is truncated before the system
+            prompt ever is.
+        """
+        if not messages:
+            return messages
+
+        system = messages[0]
+        rest = list(messages[1:])
+        sys_tokens = cls._estimate_tokens(system)
+        available = budget - sys_tokens
+
+        # Pathological: the state block alone exceeds the budget.
+        if available < 256:
+            cap_chars = max(1024, (budget * 3 // 4) * 4)
+            system = dict(system)
+            text = str(system.get("content") or "")
+            if len(text) > cap_chars:
+                system["content"] = (
+                    text[:cap_chars]
+                    + "\n…[trip state truncated to fit token budget]"
+                )
+            sys_tokens = cls._estimate_tokens(system)
+            available = budget - sys_tokens
+
+        total = sum(cls._estimate_tokens(m) for m in rest)
+
+        # Index where the current turn starts: the LAST user message.
+        # Everything from there on (question → tool_calls → observation)
+        # is one atomic unit — it is never dropped, only truncated below.
+        anchor = len(rest)
+        for i in range(len(rest) - 1, -1, -1):
+            if rest[i].get("role") == "user":
+                anchor = i
+                break
+
+        # Stage 1 — drop oldest turns, never at or after the anchor.
+        while anchor > 0 and total > available:
+            total -= cls._estimate_tokens(rest.pop(0))
+            anchor -= 1
+            # Clean up tool results orphaned by the drop (a tool message
+            # must follow its assistant tool_calls entry).
+            while (
+                anchor > 0
+                and rest[0].get("role") == "tool"
+            ):
+                total -= cls._estimate_tokens(rest.pop(0))
+                anchor -= 1
+
+        # No user message exists and the list now opens with an orphaned
+        # tool result — drop it rather than send an invalid sequence.
+        if rest and anchor == 0 and rest[0].get("role") == "tool":
+            total -= cls._estimate_tokens(rest.pop(0))
+
+        # Stage 2 — one giant message (usually a tool result in the current
+        # turn) still leaves us over budget: truncate the largest messages
+        # first. The current USER text itself is never touched.
+        if total > available and rest:
+            last_user = next(
+                (
+                    i
+                    for i in range(len(rest) - 1, -1, -1)
+                    if rest[i].get("role") == "user"
+                ),
+                -1,
+            )
+            fair_share_chars = max(
+                1024, (available // max(len(rest), 1)) * 4
+            )
+            order = sorted(
+                (i for i in range(len(rest)) if i != last_user),
+                key=lambda i: cls._estimate_tokens(rest[i]),
+                reverse=True,
+            )
+            for i in order:
+                if total <= available:
+                    break
+                msg = rest[i]
+                size = cls._estimate_tokens(msg)
+                text = str(msg.get("content") or "")
+                if size <= 64 or len(text) <= fair_share_chars:
+                    continue
+                trimmed = dict(msg)
+                trimmed["content"] = (
+                    text[:fair_share_chars]
+                    + "…[truncated to fit token budget]"
+                )
+                total += cls._estimate_tokens(trimmed) - size
+                rest[i] = trimmed
+
+        return [system] + rest
+
+    def _messages(self, budget: Optional[int] = None) -> list[dict]:
+        """State is re-injected fresh on EVERY call — the agent's memory.
+
+        The returned list is fitted to PROMPT_TOKEN_BUDGET so a long chat
+        (or a fat tool result mid-ReAct) can never 413 on Groq's free tier.
+        `self.history` itself is never trimmed.
+        """
         self.history[0] = {
             "role": "system",
             "content": (
@@ -155,20 +301,26 @@ class Orchestrator:
                 f"{self.state.summary_for_prompt()}"
             ),
         }
-        return self.history
+        return self._fit_history(
+            self.history,
+            PROMPT_TOKEN_BUDGET if budget is None else budget,
+        )
 
     # ------------------------------------------------------------------ #
     # LLM call with retry / backoff
     # ------------------------------------------------------------------ #
 
     def _chat_with_retry(self):
+        # Per-call budget: starts at PROMPT_TOKEN_BUDGET, halves on each
+        # 413 so a retry always sends something measurably smaller.
+        budget = PROMPT_TOKEN_BUDGET
         for attempt in range(4):
             try:
                 print("[llm] thinking...", flush=True)
 
                 kwargs: dict = dict(
                     model=self.model,
-                    messages=self._messages(),
+                    messages=self._messages(budget),
                     tools=TOOL_DECLARATIONS,
                     temperature=TEMPERATURE,
                     max_tokens=MAX_TOKENS,
@@ -179,15 +331,37 @@ class Orchestrator:
                 # 400 about max_tokens, flip the key below.
                 if self.provider == "groq" and "gpt-oss" in self.model:
                     kwargs.pop("max_tokens", None)
-                    kwargs["max_completion_tokens"] = MAX_TOKENS
+                    kwargs["max_completion_tokens"] = min(
+                        MAX_TOKENS, GROQ_COMPLETION_CAP
+                    )
 
                 if self._extra_body:
                     kwargs["extra_body"] = self._extra_body
 
                 return self.client.chat.completions.create(**kwargs)
 
-            except APIStatusError as e:
+            except _STATUS_ERRORS as e:
                 code = getattr(e, "status_code", None)
+                err_text = str(e).lower()
+
+                # 413 / "Request too large" — the fitted prompt still blew
+                # the TPM cap (Groq counts prompt + completion together).
+                # Halve the budget and retry IMMEDIATELY: waiting cannot
+                # make a too-large request smaller.
+                if (
+                    code == 413
+                    or "reduce your message size" in err_text
+                    or "request too large" in err_text
+                ):
+                    if attempt >= 2:
+                        raise
+                    budget = max(2200, budget // 2)
+                    print(
+                        f"\n[413 payload too large] retrying with trimmed "
+                        f"history (budget ~{budget} tokens)...",
+                        flush=True,
+                    )
+                    continue
 
                 if code == 429:
                     # Groq sends Retry-After; NVIDIA doesn't.
@@ -198,7 +372,7 @@ class Orchestrator:
                         pass
                     wait = retry_after or (
                         20 * (attempt + 1) if self.provider == "nvidia"
-                        else 5 * (attempt + 1)
+                        else 15 * (attempt + 1)  # Groq TPM rolls over 60s
                     )
                     print(
                         f"\n[429 rate limit] waiting {wait}s "
@@ -217,7 +391,7 @@ class Orchestrator:
                 # 401 / 404 / 400 — fail fast with context
                 raise
 
-            except APIConnectionError:
+            except (APIConnectionError, GroqAPIConnectionError):
                 wait = 10 * (attempt + 1)
                 print(f"\n[connection error] waiting {wait}s...", flush=True)
                 time.sleep(wait)

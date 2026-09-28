@@ -29,6 +29,9 @@ export default function IdeasTab({ sessionId, state, onStateRefresh }) {
 
   const excluded = new Set((state.excluded_names || []).map((n) => n.toLowerCase()))
   const attractions = rec.attractions || []
+  const includedCount = attractions.filter(
+    (a) => !excluded.has(String(a.name).toLowerCase())
+  ).length
 
   const toggle = async (name, currentlyExcluded) => {
     setBusyName(name)
@@ -46,15 +49,23 @@ export default function IdeasTab({ sessionId, state, onStateRefresh }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 fade-up">
       {error && (
-        <div className="p-2 rounded bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
+        <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
           {error}
         </div>
       )}
 
-      <div className="font-semibold text-sm">
-        All ideas ({attractions.length}) · tap to include/exclude, itinerary rebuilds
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <span className="section-title">All ideas</span>
+          <div className="text-xs text-muted mt-1">
+            Tap to include or exclude — the itinerary rebuilds.
+          </div>
+        </div>
+        <span className="pill py-0.5">
+          {includedCount}/{attractions.length} included
+        </span>
       </div>
 
       <ul className="space-y-1.5">
@@ -65,55 +76,75 @@ export default function IdeasTab({ sessionId, state, onStateRefresh }) {
               <button
                 onClick={() => toggle(it.name, isExcluded)}
                 disabled={busyName !== null}
-                className={`w-full text-left px-3 py-2 rounded-lg border text-sm transition flex items-center justify-between gap-2 ${
+                className={`w-full text-left px-3 py-2.5 rounded-xl border text-sm transition flex items-center justify-between gap-3 ${
                   isExcluded
                     ? 'border-border/40 bg-transparent opacity-55 hover:opacity-80'
-                    : 'border-border bg-bg hover:border-accent/60'
+                    : 'bg-bg/70 border-border hover:border-accent/60 hover:-translate-y-px'
                 } ${busyName === it.name ? 'animate-pulse' : ''}`}
               >
-                <span className="flex items-center gap-2 min-w-0">
-                  <span>{iconFor(it.kind)}</span>
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <span className="shrink-0 w-7 h-7 grid place-items-center rounded-lg bg-surface border border-border text-sm">
+                    {iconFor(it.kind)}
+                  </span>
                   <span className={`truncate ${isExcluded ? 'line-through text-muted' : ''}`}>
                     {it.name}
                   </span>
-                  {it.kind && <span className="text-muted text-xs shrink-0">· {it.kind}</span>}
+                  {it.kind && (
+                    <span className="text-muted text-[11px] shrink-0 capitalize hidden sm:inline">
+                      · {String(it.kind).replace(/_/g, ' ')}
+                    </span>
+                  )}
                 </span>
-                <span className={`text-xs shrink-0 ${isExcluded ? 'text-emerald-400' : 'text-muted'}`}>
-                  {busyName === it.name ? '…' : isExcluded ? 'restore' : 'remove'}
+                <span
+                  className={`text-[10px] shrink-0 px-2 py-0.5 rounded-full border ${
+                    isExcluded
+                      ? 'bg-surface text-muted border-border'
+                      : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                  }`}
+                >
+                  {busyName === it.name ? '…' : isExcluded ? 'excluded' : 'included'}
                 </span>
               </button>
             </li>
           )
         })}
         {attractions.length === 0 && (
-          <li className="text-muted text-sm">No attractions loaded.</li>
+          <li className="text-muted text-sm p-6 text-center border border-dashed border-border rounded-2xl">
+            No attractions loaded.
+          </li>
         )}
       </ul>
 
       {(rec.food?.length > 0 || rec.stay?.length > 0) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <div className="font-semibold mb-2 text-sm">🍽️ Food ideas</div>
-            <ul className="space-y-1">
-              {(rec.food || []).slice(0, 8).map((f, i) => (
-                <li key={`${f.name}::${i}`} className="text-sm text-muted truncate">
-                  • {f.name}
-                  {f.cuisine && <span className="text-xs"> · {f.cuisine}</span>}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <div className="font-semibold mb-2 text-sm">🏨 Stay ideas</div>
-            <ul className="space-y-1">
-              {(rec.stay || []).slice(0, 6).map((s, i) => (
-                <li key={`${s.name}::${i}`} className="text-sm text-muted truncate">
-                  • {s.name}
-                  {s.type && <span className="text-xs"> · {s.type}</span>}
-                </li>
-              ))}
-            </ul>
-          </div>
+          {rec.food?.length > 0 && (
+            <div className="panel p-4">
+              <div className="section-title mb-3">🍽️ Food ideas</div>
+              <ul className="space-y-2">
+                {(rec.food || []).slice(0, 8).map((f, i) => (
+                  <li key={`${f.name}::${i}`} className="text-sm text-muted truncate flex items-baseline gap-2">
+                    <span className="w-1 h-1 rounded-full bg-accent shrink-0" />
+                    <span className="truncate">{f.name}</span>
+                    {f.cuisine && <span className="text-xs shrink-0">· {f.cuisine}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {rec.stay?.length > 0 && (
+            <div className="panel p-4">
+              <div className="section-title mb-3">🏨 Stay ideas</div>
+              <ul className="space-y-2">
+                {(rec.stay || []).slice(0, 6).map((s, i) => (
+                  <li key={`${s.name}::${i}`} className="text-sm text-muted truncate flex items-baseline gap-2">
+                    <span className="w-1 h-1 rounded-full bg-accent shrink-0" />
+                    <span className="truncate">{s.name}</span>
+                    {s.type && <span className="text-xs shrink-0">· {s.type}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>
