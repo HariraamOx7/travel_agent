@@ -71,6 +71,38 @@
   "source": "llm",
   "visit_min": 20
  },
+ "attraction|elephants shelter|balanced": {
+  "activity": "Elephant shelter tour",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 40
+ },
+ "attraction|fish market|balanced": {
+  "activity": "Market browse",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "attraction|fisherman village|balanced": {
+  "activity": "Village stroll",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 40
+ },
+ "attraction|fishing spot|balanced": {
+  "activity": "Fishing area visit",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 25
+ },
  "attraction|free entry from here :)|balanced": {
   "activity": "Skip (free entry point)",
   "class": "skip",
@@ -78,6 +110,14 @@
   "note": "",
   "source": "llm",
   "visit_min": 15
+ },
+ "attraction|golden isle|balanced": {
+  "activity": "Island view",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 35
  },
  "attraction|greencrest|balanced": {
   "activity": "Explore Greencrest area",
@@ -103,6 +143,22 @@
   "source": "llm",
   "visit_min": 90
  },
+ "attraction|palm tree farm|balanced": {
+  "activity": "Farm walk",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "attraction|panayilkadavu bridge|balanced": {
+  "activity": "Bridge viewpoint",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 20
+ },
  "attraction|pine forest|balanced": {
   "activity": "Walk through pine forest",
   "class": "leisure",
@@ -119,6 +175,14 @@
   "source": "llm",
   "visit_min": 45
  },
+ "attraction|temple|balanced": {
+  "activity": "Temple visit",
+  "class": "sight",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
  "monument|ashoka pillar|balanced": {
   "activity": "See historic Ashoka Pillar",
   "class": "sight",
@@ -126,6 +190,14 @@
   "note": "",
   "source": "llm",
   "visit_min": 20
+ },
+ "museum|asan smarakam|balanced": {
+  "activity": "Memorial museum",
+  "class": "sight",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 25
  },
  "museum|kodai observatory museum|balanced": {
   "activity": "Explore observatory museum",
@@ -135,6 +207,14 @@
   "source": "llm",
   "visit_min": 45
  },
+ "museum|kurikani junction|balanced": {
+  "activity": "Museum visit",
+  "class": "sight",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
  "museum|wax world|balanced": {
   "activity": "Visit wax museum",
   "class": "sightsee",
@@ -142,6 +222,14 @@
   "note": "",
   "source": "llm",
   "visit_min": 45
+ },
+ "park|baskest ball court|balanced": {
+  "activity": "Basketball court",
+  "class": "leisure",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 20
  },
  "park|dtpc kids adventure park|balanced": {
   "activity": "Kids adventure playground",
@@ -159,6 +247,14 @@
   "source": "llm",
   "visit_min": 60
  },
+ "park|nehru park|balanced": {
+  "activity": "Park stroll",
+  "class": "leisure",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
  "park|sengulam eco-tourism|balanced": {
   "activity": "Eco\u2011tourism park visit",
   "class": "leisure",
@@ -166,6 +262,22 @@
   "note": "",
   "source": "llm",
   "visit_min": 60
+ },
+ "park|varkala children's park|balanced": {
+  "activity": "Park visit",
+  "class": "leisure",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "park|\u0d15\u0d33\u0d3f\u0d2a\u0d4a\u0d2f\u0d4d\u0d15|balanced": {
+  "activity": "Park visit",
+  "class": "leisure",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 20
  },
  "peak|chokramudi|balanced": {
   "activity": "Trek to Chokramudi peak",
@@ -239,6 +351,14 @@
   "source": "llm",
   "visit_min": 45
  },
+ "viewpoint|boat club kappil|balanced": {
+  "activity": "Boat club visit",
+  "class": "leisure",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
  "viewpoint|circular tea plantations|balanced": {
   "activity": "Circular Tea Plantations walk",
   "class": "sightsee",
@@ -286,6 +406,46 @@
   "note": "272\u202fm climb, near trek threshold",
   "source": "llm",
   "visit_min": 45
+ },
+ "viewpoint|kappil hs lake view|balanced": {
+  "activity": "Lake viewpoint",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|kappil lake|balanced": {
+  "activity": "Lake walk",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 35
+ },
+ "viewpoint|kappil pozhi|balanced": {
+  "activity": "Waterfront view",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|karippuram lake view|balanced": {
+  "activity": "Lake viewpoint",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
+ "viewpoint|kuriyilkadavu|balanced": {
+  "activity": "Scenic viewpoint",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
  },
  "viewpoint|lake and view point|balanced": {
   "activity": "Relax by lake view",
@@ -391,6 +551,14 @@
   "source": "llm",
   "visit_min": 30
  },
+ "viewpoint|muthala pozhi view point 2|balanced": {
+  "activity": "Viewpoint",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
  "viewpoint|palani temple majestic viewpoint|balanced": {
   "activity": "View temple from height",
   "class": "sightsee",
@@ -439,6 +607,14 @@
   "source": "llm",
   "visit_min": 30
  },
+ "viewpoint|polachira|balanced": {
+  "activity": "Wetland viewpoint",
+  "class": "sightsee",
+  "intensity": 1,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
  "viewpoint|ponmudi hanging bridge|balanced": {
   "activity": "Cross hanging bridge",
   "class": "sightsee",
@@ -479,6 +655,14 @@
   "source": "llm",
   "visit_min": 30
  },
+ "viewpoint|sree eight sun down|balanced": {
+  "activity": "Sunset viewpoint",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 35
+ },
  "viewpoint|suicide point|balanced": {
   "activity": "Take in dramatic view",
   "class": "sightsee",
@@ -486,6 +670,14 @@
   "note": "",
   "source": "llm",
   "visit_min": 30
+ },
+ "viewpoint|sundown view point|balanced": {
+  "activity": "Sunset viewpoint",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 40
  },
  "viewpoint|sunset deck|balanced": {
   "activity": "Sunset Deck viewing",
@@ -511,6 +703,14 @@
   "source": "llm",
   "visit_min": 45
  },
+ "viewpoint|swargam|balanced": {
+  "activity": "Panoramic viewpoint",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 30
+ },
  "viewpoint|tea paddies|balanced": {
   "activity": "Tea paddies viewpoint walk",
   "class": "sightsee",
@@ -518,6 +718,14 @@
   "note": "136\u202fm ascent",
   "source": "llm",
   "visit_min": 40
+ },
+ "viewpoint|thangassery breakwater|balanced": {
+  "activity": "Breakwater walk",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 35
  },
  "viewpoint|the cross|balanced": {
   "activity": "Visit historic cross",
@@ -566,6 +774,22 @@
   "note": "",
   "source": "llm",
   "visit_min": 30
+ },
+ "viewpoint|varkala beach and cliff|balanced": {
+  "activity": "Beach and cliff walk",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 45
+ },
+ "viewpoint|vettakada beach|balanced": {
+  "activity": "Beach stroll",
+  "class": "sightsee",
+  "intensity": 2,
+  "note": "",
+  "source": "llm",
+  "visit_min": 45
  },
  "viewpoint|watch tower|balanced": {
   "activity": "Climb watch tower for view",
