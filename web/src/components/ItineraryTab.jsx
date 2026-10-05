@@ -84,12 +84,44 @@ function StopCard({ stop, dayIdx, sIdx, color, isSource, onHandleDown }) {
           {fmtMinutes(stop.visit_min) && (
             <span className="text-[10px] text-muted">· {fmtMinutes(stop.visit_min)} on site</span>
           )}
+          {typeof stop.intensity === 'number' && (
+            <span className="text-[10px] text-muted">· Intensity {stop.intensity}/5</span>
+          )}
+          {stop.indoor_outdoor && stop.indoor_outdoor !== 'unknown' && (
+            <span className="text-[10px] text-muted capitalize">· {stop.indoor_outdoor}</span>
+          )}
+          {stop.entry_fee_inr != null && (
+            <span className="text-[10px] text-muted">· Entry ₹{stop.entry_fee_inr}</span>
+          )}
+          {stop.booking_required && (
+            <span className="text-[10px] text-amber-300">· Booking required</span>
+          )}
           {stop.ascent_m > 0 && (
             <span className="text-[10px] text-muted">· +{stop.ascent_m} m</span>
           )}
         </div>
 
         {stop.note && <span className="text-[11px] text-muted italic pl-7">{stop.note}</span>}
+        {stop.why_selected && <span className="text-[11px] text-muted pl-7">{stop.why_selected}</span>}
+        {(stop.crowd_score != null || stop.risk_score != null) && (
+          <span className="text-[10px] text-muted pl-7">
+            Estimated crowd: {stop.crowd_score >= 0.7 ? 'high' : stop.crowd_score >= 0.4 ? 'medium' : 'low'}
+            {' · '}Estimated risk: {stop.risk_score >= 0.7 ? 'high' : stop.risk_score >= 0.4 ? 'medium' : 'low'}
+          </span>
+        )}
+        {stop.opening_hours && (
+          <span className="text-[10px] text-muted pl-7">Hours: {stop.opening_hours}</span>
+        )}
+        {stop.source_url && (
+          <a className="text-[10px] text-accent pl-7 underline" href={stop.source_url} target="_blank" rel="noreferrer">
+            Official place source{stop.last_verified ? ` · checked ${stop.last_verified}` : ''}
+          </a>
+        )}
+        {stop.data_sources?.intensity && (
+          <span className="text-[10px] text-muted pl-7">
+            Effort: {stop.data_sources.intensity === 'official_site' ? 'official source' : stop.data_sources.intensity === 'llm' ? 'AI estimate' : 'category estimate'}
+          </span>
+        )}
       </div>
     </div>
   )
@@ -390,6 +422,10 @@ export default function ItineraryTab({ sessionId, state, onStateRefresh }) {
                     {fmtMinutes(day.total_travel_min) && (
                       <span>Travel: {fmtMinutes(day.total_travel_min)}</span>
                     )}
+                    {typeof day.intensity_total === 'number' && (
+                      <span>Intensity: {day.intensity_total}/{day.intensity_cap}</span>
+                    )}
+                    {day.route_algorithm && <span>Route: {day.route_algorithm} · {day.route_distance_source}</span>}
                     {typeof day.trek_count === 'number' && (
                       <span>
                         Treks: {day.trek_count}

@@ -20,7 +20,7 @@ from agent.state import Destination, DestinationCandidate, TripState
 from agent.ner import clean_place_name
 from agent import geo, scheduler as scheduler_mod
 from agent import pois as pois_mod
-from agent import weather
+from agent import weather, place_profiles
 
 
 # --------------------------------------------------------------------------- #
@@ -254,6 +254,30 @@ def extract_trip_slots(args: dict, state: TripState) -> dict:
                 applied.append("interests")
         else:
             rejected.append("interests (not a list)")
+
+    if "daily_intensity_limit" in args:
+        try:
+            limit = int(args["daily_intensity_limit"])
+        except (TypeError, ValueError):
+            limit = 0
+        if 1 <= limit <= 20:
+            if not _already_set(state, "daily_intensity_limit", limit):
+                state.daily_intensity_limit = limit
+                applied.append("daily_intensity_limit")
+        else:
+            rejected.append("daily_intensity_limit (expected 1-20)")
+
+    if "avoid_crowds" in args and isinstance(args["avoid_crowds"], bool):
+        state.avoid_crowds = args["avoid_crowds"]
+        applied.append("avoid_crowds")
+
+    if "accessibility_need" in args:
+        need = str(args["accessibility_need"]).lower()
+        if need in {"none", "limited_mobility", "wheelchair"}:
+            state.accessibility_need = need
+            applied.append("accessibility_need")
+        else:
+            rejected.append("accessibility_need")
 
     # --- pace (optional) ------------------------------------------------ #
     if "pace" in args and args["pace"]:
@@ -689,7 +713,14 @@ def get_recommendations(args: dict, state: TripState) -> dict:
         items.sort(key=lambda p: _score(p, d.lat, d.lng), reverse=True)
         pois[cat] = _dedupe(items)
 
-    attrs_all = pois["attraction"]
+    attrs_all = place_profiles.enrich_many(pois["attraction"])
+    wanted = {str(i).strip().lower() for i in state.interests}
+    if wanted:
+        attrs_all.sort(
+            key=lambda p: (_score(p, d.lat, d.lng)
+                           + 0.8 * len(wanted & set(p.get("activity_tags") or []))),
+            reverse=True,
+        )
     # The full ranked pool feeds the Ideas tab (the user browses and edits
     # it); the scheduler applies its own cap of min(12, n_days*3) so the
     # solver stays small regardless of how wide this is.
@@ -814,7 +845,7 @@ def _build_multi_destination(state: TripState, merged: list[str]) -> dict:
         if "error" in pois:
             pools.append((d, [], []))
             continue
-        pools.append((d, pois.get("attraction", [])[:30],
+        pools.append((d, place_profiles.enrich_many(pois.get("attraction", [])[:30]),
                       pois.get("food", [])[:12]))
 
     # --- Day split ------------------------------------------------------
@@ -823,11 +854,13 @@ def _build_multi_destination(state: TripState, merged: list[str]) -> dict:
 
     # --- Weather per destination (whole date range) ---------------------
     rain_by_dest = []
+    weather_days_by_dest = []
     for (d, _, _) in pools:
         w = weather.trip_weather(d.lat, d.lng, state.start_date, state.end_date)
         by_date = {row["date"]: row.get("precip_mm", 0) or 0
                    for row in w.get("days", [])}
         rain_by_dest.append(by_date)
+        weather_days_by_dest.append(w.get("days", []))
 
     # --- Transfer legs between consecutive destinations -----------------
     def _leg_km(a, b):
@@ -925,7 +958,9 @@ def _build_multi_destination(state: TripState, merged: list[str]) -> dict:
 
             pool_items = [{"name": a["name"], "kind": a.get("kind"),
                            "elevation_m": a.get("elevation_m"),
-                           "ascent_m": a.get("ascent_m")}
+                           "ascent_m": a.get("ascent_m"),
+                           "activity_tags": a.get("activity_tags"),
+                           "indoor_outdoor": a.get("indoor_outdoor")}
                           for a in enriched]
             activity_map = activities_mod.classify_pool(pool_items,
                                                         pace=state.pace)
@@ -937,6 +972,11 @@ def _build_multi_destination(state: TripState, merged: list[str]) -> dict:
                 distance_factory=distance_factory,
                 activities=activity_map,
                 adventure_level=adventure_level,
+                daily_intensity_limit=state.daily_intensity_limit,
+                interests=state.interests,
+                avoid_crowds=state.avoid_crowds,
+                accessibility_need=state.accessibility_need,
+                weather_days=weather_days_by_dest[i],
                 stay=stay_rec,
             )
             if "error" in res:
@@ -1158,6 +1198,8 @@ def build_itinerary(args: dict, state: TripState) -> dict:
             "kind": a.get("kind"),
             "elevation_m": a.get("elevation_m"),
             "ascent_m": a.get("ascent_m"),
+            "activity_tags": a.get("activity_tags"),
+            "indoor_outdoor": a.get("indoor_outdoor"),
         }
         for a in enriched
     ]
@@ -1195,6 +1237,11 @@ def build_itinerary(args: dict, state: TripState) -> dict:
         distance_factory=distance_factory,
         activities=activity_map,
         adventure_level=getattr(state, "adventure_level", "balanced"),
+        daily_intensity_limit=state.daily_intensity_limit,
+        interests=state.interests,
+        avoid_crowds=state.avoid_crowds,
+        accessibility_need=state.accessibility_need,
+        weather_days=(rec.get("weather") or {}).get("days", []),
         stay=((rec.get("stay") or [None])[0]),
     )
     if "error" in result:
@@ -1228,6 +1275,10 @@ def build_itinerary(args: dict, state: TripState) -> dict:
                     "travel_min": s["travel_min"],
                     "km_from_prev": s["km_from_prev"],
                     "intensity": s["intensity"],
+                    "indoor_outdoor": s.get("indoor_outdoor"),
+                    "entry_fee_inr": s.get("entry_fee_inr"),
+                    "weather_score": s.get("weather_score"),
+                    "why_selected": s.get("why_selected"),
                     "is_trek": s["is_trek"],
                     "note": s["note"],
                 }
@@ -1240,6 +1291,8 @@ def build_itinerary(args: dict, state: TripState) -> dict:
             "dinner": _meal_brief(day.get("dinner")),
             "effort_min": day.get("effort_min"),
             "effort_cap_min": day.get("effort_cap_min"),
+            "intensity_total": day.get("intensity_total"),
+            "intensity_cap": day.get("intensity_cap"),
             "travel_min": day.get("total_travel_min"),
             "trek_count": day.get("trek_count"),
             "class_mix": day.get("class_mix"),
@@ -1348,6 +1401,11 @@ def estimate_budget(args: dict, state: TripState) -> dict:
         return {"error": "build the itinerary first — call build_itinerary"}
 
     n_stops = sum(len(day["stops"]) for day in state.itinerary.get("days", []))
+    trip_stops = [stop for day in state.itinerary.get("days", [])
+                  for stop in day.get("stops", [])]
+    known_fees = sum(float(s["entry_fee_inr"]) for s in trip_stops
+                     if s.get("entry_fee_inr") is not None)
+    unknown_fees = sum(s.get("entry_fee_inr") is None for s in trip_stops)
 
     # Get distance for intercity fare if we have origin coords.
     distance_km = None
@@ -1364,6 +1422,8 @@ def estimate_budget(args: dict, state: TripState) -> dict:
         state.travellers, state.n_days, n_stops,
         travel_mode=state.travel_mode,
         distance_km=distance_km,
+        known_entry_fees_inr=known_fees,
+        unknown_fee_stops=unknown_fees,
     )
     delta = (state.budget_total or 0) - est["total_inr"]
     state.recommendations = state.recommendations or {}
@@ -1461,11 +1521,15 @@ def move_stop(args: dict, state: TripState) -> dict:
     if hotel_src is None or hotel_dst is None:
         return {"error": "destination coordinates missing — cannot re-time"}
 
-    # --- Mutate -----------------------------------------------------------
-    stop = src_stops.pop(idx)
-    if days[to_day].get("stops") is None:
-        days[to_day]["stops"] = []
-    dst_stops = days[to_day]["stops"]
+    # Build candidate days first, so a rejected edit leaves the itinerary intact.
+    from copy import deepcopy
+    from agent import opening_hours
+    draft_src = deepcopy(src)
+    draft_dst = draft_src if to_day == from_day else deepcopy(days[to_day])
+    stop = draft_src["stops"].pop(idx)
+    if draft_dst.get("stops") is None:
+        draft_dst["stops"] = []
+    dst_stops = draft_dst["stops"]
     if to_index is None or not (0 <= to_index <= len(dst_stops)):
         to_index = len(dst_stops)
     dst_stops.insert(to_index, stop)
@@ -1473,19 +1537,37 @@ def move_stop(args: dict, state: TripState) -> dict:
     food_all = [f for f in (rec.get("food") or [])
                 if f.get("lat") is not None]
     stay_rec = ((rec.get("stay") or [None])[0])
-    days[from_day] = scheduler_mod.retime_day(
-        days[from_day], hotel_src, coords_by_name, list(food_all),
-        stay=stay_rec,
+    weather_days = {row["date"]: row for row in
+                    (rec.get("weather") or {}).get("days", [])}
+    draft_src = scheduler_mod.retime_day(
+        draft_src, hotel_src, coords_by_name, list(food_all),
+        stay=stay_rec, interests=state.interests,
+        weather_day=weather_days.get(draft_src.get("date")),
     )
     if to_day != from_day:
         # Keep the two lunches apart when the pool allows it.
-        first_lunch = days[from_day].get("lunch")
+        first_lunch = draft_src.get("lunch")
         pool = [f for f in food_all if f.get("name") != first_lunch]
-        days[to_day] = scheduler_mod.retime_day(
-            days[to_day], hotel_dst, coords_by_name,
+        draft_dst = scheduler_mod.retime_day(
+            draft_dst, hotel_dst, coords_by_name,
             pool or list(food_all),
-            stay=stay_rec,
+            stay=stay_rec, interests=state.interests,
+            weather_day=weather_days.get(draft_dst.get("date")),
         )
+
+    for candidate in ({from_day: draft_src, to_day: draft_dst}).values():
+        cap = candidate.get("intensity_cap")
+        if cap is not None and candidate.get("intensity_total", 0) > cap:
+            return {"error": f"move exceeds the daily intensity limit of {cap}"}
+        for item in candidate.get("stops") or []:
+            fits = opening_hours.visit_fits(
+                item.get("opening_hours"), date.fromisoformat(candidate["date"]),
+                item.get("arrive_min", 0), item.get("visit_min", 0))
+            if fits is False:
+                return {"error": f"{item['name']} is closed at the proposed visit time"}
+    days[from_day] = draft_src
+    if to_day != from_day:
+        days[to_day] = draft_dst
 
     # Sessions built before meals existed (or days the scheduler never
     # touched) get breakfast & dinner here — the first edit heals the trip.

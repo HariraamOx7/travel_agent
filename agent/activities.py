@@ -72,6 +72,8 @@ class Activity:
     is_trek: bool = False
     trek_source: str = ""         # llm | ascent | both
     duration_source: str = "llm"  # llm | default
+    activity_tags: tuple[str, ...] = ()
+    indoor_outdoor: str = "unknown"
 
     @property
     def is_visit(self) -> bool:
@@ -193,6 +195,13 @@ def _coerce(
     label = (entry.get("activity") or "").strip() or cls.replace("_", " ").title()
     label = label[:80]
     note = (entry.get("note") or "").strip()[:160]
+    tags = entry.get("activity_tags") or []
+    if not isinstance(tags, list):
+        tags = []
+    tags = tuple(str(t).strip().lower()[:30] for t in tags[:5] if str(t).strip())
+    indoor_outdoor = _norm(entry.get("indoor_outdoor"))
+    if indoor_outdoor not in {"indoor", "outdoor", "mixed"}:
+        indoor_outdoor = "unknown"
 
     is_trek, trek_source = _apply_trek_signal(cls, ascent_m)
 
@@ -207,6 +216,8 @@ def _coerce(
         is_trek=is_trek,
         trek_source=trek_source,
         duration_source=source,
+        activity_tags=tags,
+        indoor_outdoor=indoor_outdoor,
     )
 
 
@@ -250,6 +261,8 @@ def _build_prompt(items: list[dict], pace: str) -> str:
         "- visit_min: realistic minutes on site, 15-300, including the walk "
         "to and from the viewpoint but NOT the road transfer",
         "- note: optional, under 15 words, mention the climb if it matters",
+        "- activity_tags: up to 5 interests such as nature, heritage, spirituality, adventure",
+        "- indoor_outdoor: indoor, outdoor or mixed",
         "",
         "Stops:",
     ]
@@ -267,7 +280,8 @@ def _build_prompt(items: list[dict], pace: str) -> str:
         "",
         "Reply with exactly this JSON shape:",
         '{"pois": [{"name": "...", "activity": "...", "class": "...", '
-        '"intensity": 3, "visit_min": 90, "note": "..."}]}',
+        '"intensity": 3, "visit_min": 90, "activity_tags": ["nature"], '
+        '"indoor_outdoor": "outdoor", "note": "..."}]}',
         "Include every stop, using the name exactly as given.",
     ]
     return "\n".join(lines)
@@ -372,6 +386,8 @@ def classify_pool(
                     "intensity": activity.intensity,
                     "visit_min": activity.visit_min,
                     "note": activity.note,
+                    "activity_tags": list(activity.activity_tags),
+                    "indoor_outdoor": activity.indoor_outdoor,
                     "source": "llm",
                 }
         if use_cache and entries_by_name:

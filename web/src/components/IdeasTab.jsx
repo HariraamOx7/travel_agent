@@ -94,6 +94,11 @@ export default function IdeasTab({ sessionId, state, onStateRefresh }) {
                       · {String(it.kind).replace(/_/g, ' ')}
                     </span>
                   )}
+                  {it.indoor_outdoor && (
+                    <span className="text-muted text-[11px] shrink-0 capitalize hidden md:inline">
+                      · {it.indoor_outdoor}
+                    </span>
+                  )}
                 </span>
                 <span
                   className={`text-[10px] shrink-0 px-2 py-0.5 rounded-full border ${

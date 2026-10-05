@@ -16,7 +16,9 @@ UNIT_INR = {
 
 def estimate(travellers: int, n_days: int, n_stops: int,
              travel_mode: str | None = None,
-             distance_km: float | None = None) -> dict:
+             distance_km: float | None = None,
+             known_entry_fees_inr: float = 0,
+             unknown_fee_stops: int | None = None) -> dict:
     """Estimate trip cost. If travel_mode is set and distance_km is known,
     add a transport line; otherwise omit it (traveller arranges their own)."""
     rooms = math.ceil(travellers / 2)
@@ -25,7 +27,10 @@ def estimate(travellers: int, n_days: int, n_stops: int,
     meals = n_days * travellers * 2
     food = meals * UNIT_INR["food_per_meal"]
     local = n_days * UNIT_INR["local_transport_per_day"]
-    activities = n_stops * UNIT_INR["activity_per_stop"] * travellers
+    if unknown_fee_stops is None:
+        unknown_fee_stops = n_stops
+    activities = (known_entry_fees_inr
+                  + unknown_fee_stops * UNIT_INR["activity_per_stop"]) * travellers
 
     intercity = 0
     intercity_note = None
@@ -70,6 +75,8 @@ def estimate(travellers: int, n_days: int, n_stops: int,
             "meals_per_person_per_day": 2,
             "total_meals": meals,
             "activity_stops": n_stops,
+            "known_entry_fees_inr_per_person": known_entry_fees_inr,
+            "unknown_fee_stops": unknown_fee_stops,
             "travel_mode": travel_mode or "not chosen",
             "intercity_note": intercity_note,
         },

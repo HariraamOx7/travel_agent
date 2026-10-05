@@ -47,11 +47,13 @@ attractions in the order they were kept.
 """
 import logging
 import math
-from datetime import timedelta
+from dataclasses import replace
+from datetime import date, timedelta
 
 from ortools.sat.python import cp_model
 
 from agent.activities import Activity
+from agent import trip_conditions, opening_hours, route_astar
 
 
 log = logging.getLogger(__name__)
@@ -95,6 +97,7 @@ _EARLIEST_MEAL_MIN = 4 * 60 + 30   # 04:30
 
 # Daily on-foot effort budget (minutes), by the user's pace.
 _EFFORT_CAP_MIN = {"relaxed": 240, "balanced": 330, "packed": 420}
+_INTENSITY_CAP = {"relaxed": 5, "balanced": 8, "packed": 11}
 
 # Trek cadence, by the user's adventure level: one trek every N days at
 # most. `high` keeps the old one-per-day ceiling. A 'balanced' trip must
@@ -266,7 +269,9 @@ def _filter_and_cap(attrs, dest_lat, dest_lng, n_days, exclude):
 
 def _solve_assignment(attrs, n_days, target, max_load, rain_mm,
                       dm: _DistanceMatrix, effort_min, is_trek,
-                      max_effort_min, class_of=None, trek_cap=None):
+                      max_effort_min, class_of=None, trek_cap=None,
+                      intensity=None, max_intensity=None, day_costs=None,
+                      day_dates=None):
     """Assign each attraction to a day, respecting effort feasibility.
 
     H5 (at most one trek per day) and H6 (daily on-foot effort cap) are
@@ -274,10 +279,8 @@ def _solve_assignment(attrs, n_days, target, max_load, rain_mm,
     number of treks at the number of days before calling in.
     """
     n_attrs = len(attrs)
-    outdoor = [
-        0 if (a.get("kind") or "").lower() in _INDOOR else 1
-        for a in attrs
-    ]
+    outdoor = [0 if a.get("indoor_outdoor") == "indoor" else 1 for a in attrs]
+    intensity = intensity or [2] * n_attrs
 
     # Pairwise terms, now over individual attractions rather than clusters.
     # A close pair can carry BOTH a cohesion reward and a mild dispersion
@@ -307,18 +310,21 @@ def _solve_assignment(attrs, n_days, target, max_load, rain_mm,
     x = {(i, d): m.NewBoolVar(f"x_{i}_{d}")
          for i in range(n_attrs) for d in range(n_days)}
 
-    # H1 — every attraction is scheduled on exactly one day.
+    # H1 — an attraction is scheduled at most once. Some must be omitted
+    # when the traveller's limits make the full pool impossible.
     for i in range(n_attrs):
-        m.Add(sum(x[i, d] for d in range(n_days)) == 1)
+        m.Add(sum(x[i, d] for d in range(n_days)) <= 1)
+        if day_dates:
+            for d, day_date in enumerate(day_dates):
+                if opening_hours.earliest_start(
+                    attrs[i].get("opening_hours"), day_date,
+                    int(_TREK_DAY_START_H * 60 if is_trek[i] else _DAY_START_H * 60),
+                    effort_min[i]) is None:
+                    m.Add(x[i, d] == 0)
 
     # H2 — stop count per day.
     for d in range(n_days):
         m.Add(sum(x[i, d] for i in range(n_attrs)) <= max_load)
-
-    # H3 — no empty day while there is enough to fill them.
-    if n_attrs >= n_days:
-        for d in range(n_days):
-            m.Add(sum(x[i, d] for i in range(n_attrs)) >= 1)
 
     # H4 — an extremely long same-day pair is forbidden.
     for (i, j) in pair_forbidden:
@@ -344,6 +350,9 @@ def _solve_assignment(attrs, n_days, target, max_load, rain_mm,
     for d in range(n_days):
         m.Add(sum(effort_min[i] * x[i, d] for i in range(n_attrs))
               <= max_effort_min)
+        if max_intensity is not None:
+            m.Add(sum(intensity[i] * x[i, d] for i in range(n_attrs))
+                  <= max_intensity)
 
     dispersion_terms = []
     for (i, j), weight in pair_cost.items():
@@ -421,8 +430,12 @@ def _solve_assignment(attrs, n_days, target, max_load, rain_mm,
                           - _MAX_SAME_CLASS_PER_DAY)
                     same_class_terms.append(over)
 
+    condition_terms = [int(round(20 * day_costs[i][d])) * x[i, d]
+                       for i in range(n_attrs) for d in range(n_days)] if day_costs else []
     m.Minimize(
-        _W_RAIN * sum(rain_terms)
+        -10000 * sum(x.values())
+        + _W_RAIN * sum(rain_terms)
+        + sum(condition_terms)
         + sum(dispersion_terms)
         - _W_COHESION * sum(cohesion_terms)
         + _W_LOAD * sum(imbalance_terms)
@@ -442,7 +455,8 @@ def _solve_assignment(attrs, n_days, target, max_load, rain_mm,
                     solver.StatusName(status))
         return (
             _greedy_assign(n_attrs, n_days, max_load, effort_min, is_trek,
-                           max_effort_min, trek_cap=trek_cap),
+                           max_effort_min, trek_cap=trek_cap,
+                           intensity=intensity, max_intensity=max_intensity),
             f"FALLBACK({solver.StatusName(status)})",
         )
 
@@ -456,7 +470,8 @@ def _solve_assignment(attrs, n_days, target, max_load, rain_mm,
 
 
 def _greedy_assign(n_attrs, n_days, max_load, effort_min, is_trek,
-                   max_effort_min, trek_cap=None):
+                   max_effort_min, trek_cap=None, intensity=None,
+                   max_intensity=None):
     """Feasibility-first fallback, used only when CP-SAT gives up.
 
     Treks are placed first, one per day, honouring the trip-wide cap;
@@ -468,6 +483,8 @@ def _greedy_assign(n_attrs, n_days, max_load, effort_min, is_trek,
     day_load = {d: 0 for d in range(n_days)}
     day_effort = {d: 0 for d in range(n_days)}
     day_treks = {d: 0 for d in range(n_days)}
+    day_intensity = {d: 0 for d in range(n_days)}
+    intensity = intensity or [2] * n_attrs
     total_treks = 0
 
     order = sorted(
@@ -483,18 +500,16 @@ def _greedy_assign(n_attrs, n_days, max_load, effort_min, is_trek,
             if day_load[d] + 1 <= max_load
             and not (is_trek[i] and day_treks[d] >= 1)
             and day_effort[d] + effort_min[i] <= max_effort_min
+            and (max_intensity is None or
+                 day_intensity[d] + intensity[i] <= max_intensity)
         ]
-        if feasible:
-            d = min(feasible,
-                    key=lambda k: (day_load[k], day_effort[k], k))
-        else:
-            relaxed = [d for d in range(n_days)
-                       if not (is_trek[i] and day_treks[d] >= 1)]
-            pool = relaxed or list(range(n_days))
-            d = min(pool, key=lambda k: (day_load[k], day_effort[k], k))
+        if not feasible:
+            continue
+        d = min(feasible, key=lambda k: (day_load[k], day_effort[k], k))
         day_members[d].append(i)
         day_load[d] += 1
         day_effort[d] += effort_min[i]
+        day_intensity[d] += intensity[i]
         if is_trek[i]:
             day_treks[d] += 1
             total_treks += 1
@@ -506,7 +521,7 @@ def _greedy_assign(n_attrs, n_days, max_load, effort_min, is_trek,
 # --------------------------------------------------------------------------- #
 
 def _order_days_geographically(day_members, attrs, dm: _DistanceMatrix,
-                               rain_mm=None):
+                               rain_mm=None, date_costs=None):
     """Choose the ORDER of days: an exact permutation over day groups.
 
     The cost of an ordering is
@@ -555,6 +570,8 @@ def _order_days_geographically(day_members, attrs, dm: _DistanceMatrix,
     rain = list(rain_mm or [])
 
     def rain_cost(g: int, pos: int) -> int:
+        if date_costs is not None:
+            return int(round(sum(date_costs[i][pos] for i in day_members[keys[g]]) * 20))
         if pos >= len(rain) or not rain[pos]:
             return 0
         return int(round(_W_RAIN * rain[pos])) * outdoor_n[g]
@@ -630,7 +647,7 @@ def _order_days_geographically(day_members, attrs, dm: _DistanceMatrix,
 # Stage 4 — sequencing
 # --------------------------------------------------------------------------- #
 def _order_stops(member_indices, attrs, dm: _DistanceMatrix):
-    """Nearest-neighbor seed + 2-opt over a CLOSED tour.
+    """A* for small day groups; nearest-neighbor + 2-opt for larger ones.
 
     member_indices are indices into `attrs` (0-based); the wrapper indexes
     coords as i+1 (because coords[0] is the hotel).
@@ -644,6 +661,8 @@ def _order_stops(member_indices, attrs, dm: _DistanceMatrix):
     """
     if len(member_indices) <= 1:
         return list(member_indices)
+    if len(member_indices) <= 8:
+        return route_astar.order_stops(list(member_indices), dm)
     if len(member_indices) == 2:
         # Both orders close identically; start with whichever is nearer
         # the hotel so the day reads base → far → (home).
@@ -717,7 +736,7 @@ def _nearest_food(coord, food_pool):
 
 
 def _build_timeline(tour, attrs, dm: _DistanceMatrix, effort_min, is_trek,
-                    activities, food_pool):
+                    activities, food_pool, day_date=None):
     """Walk one day's stops on a clock.
 
     Returns (stops, totals, lunch_name, lunch_place, lunch_minutes,
@@ -760,6 +779,12 @@ def _build_timeline(tour, attrs, dm: _DistanceMatrix, effort_min, is_trek,
 
         clock += travel
         travel_total += travel
+        if day_date is not None:
+            opening = opening_hours.earliest_start(
+                attr.get("opening_hours"), day_date, int(round(clock)),
+                effort_min[i])
+            if opening is not None:
+                clock = max(clock, opening)
         arrive_min = clock
         clock += effort_min[i]
         visit_total += effort_min[i]
@@ -772,6 +797,16 @@ def _build_timeline(tour, attrs, dm: _DistanceMatrix, effort_min, is_trek,
             "activity": act.activity,
             "class": act.cls,
             "intensity": act.intensity,
+            "activity_tags": attr.get("activity_tags") or list(act.activity_tags),
+            "indoor_outdoor": attr.get("indoor_outdoor") if attr.get("indoor_outdoor") != "unknown" else act.indoor_outdoor,
+            "opening_hours": attr.get("opening_hours"),
+            "entry_fee_inr": attr.get("entry_fee_inr"),
+            "booking_required": attr.get("booking_required"),
+            "best_months": attr.get("best_months"),
+            "accessibility": attr.get("accessibility", "unknown"),
+            "data_sources": attr.get("data_sources", {}),
+            "source_url": attr.get("source_url"),
+            "last_verified": attr.get("last_verified"),
             "strenuous": act.strenuous,
             "note": act.note,
             "is_trek": bool(is_trek[i]),
@@ -1003,7 +1038,7 @@ def assign_meals(days, hotels, food, stay=None, coords_by_name=None) -> None:
 
 def retime_day(day: dict, hotel: tuple[float, float],
                coords_by_name: dict, food_pool: list[dict],
-               stay=None) -> dict:
+               stay=None, interests=None, weather_day=None) -> dict:
     """Recompute one day's clock after the USER edited the itinerary.
 
     Drag-and-drop in the UI adds or removes stops; this rebuilds the day
@@ -1023,7 +1058,7 @@ def retime_day(day: dict, hotel: tuple[float, float],
     preserved = {
         k: day[k]
         for k in ("destination", "transfer_in", "theme", "hotel",
-                  "effort_cap_min")
+                  "effort_cap_min", "intensity_cap")
         if k in day and day[k] is not None
     }
 
@@ -1032,6 +1067,7 @@ def retime_day(day: dict, hotel: tuple[float, float],
     if not stops_in:
         rest = _rest_day(date_str, rain_d)
         rest.update(preserved)
+        rest["intensity_total"] = 0
         assign_meals([rest], [tuple(hotel)], food_pool, stay,
                      coords_by_name=coords_by_name)
         return rest
@@ -1046,6 +1082,16 @@ def retime_day(day: dict, hotel: tuple[float, float],
             "lng": lng,
             "elevation_m": s.get("elevation_m"),
             "ascent_m": s.get("ascent_m"),
+            "activity_tags": s.get("activity_tags"),
+            "indoor_outdoor": s.get("indoor_outdoor"),
+            "opening_hours": s.get("opening_hours"),
+            "entry_fee_inr": s.get("entry_fee_inr"),
+            "booking_required": s.get("booking_required"),
+            "best_months": s.get("best_months"),
+            "accessibility": s.get("accessibility"),
+            "data_sources": s.get("data_sources"),
+            "source_url": s.get("source_url"),
+            "last_verified": s.get("last_verified"),
         })
     effort_min = [int(s.get("visit_min") or 60) for s in stops_in]
     is_trek = [bool(s.get("is_trek")) for s in stops_in]
@@ -1062,6 +1108,8 @@ def retime_day(day: dict, hotel: tuple[float, float],
             is_trek=bool(s.get("is_trek")),
             trek_source=s.get("trek_source") or "",
             duration_source=s.get("duration_source") or "llm",
+            activity_tags=tuple(s.get("activity_tags") or []),
+            indoor_outdoor=s.get("indoor_outdoor") or "unknown",
         )
         for s in stops_in
     ]
@@ -1073,7 +1121,17 @@ def retime_day(day: dict, hotel: tuple[float, float],
     (stops, totals, lunch_name, lunch_place, lunch_minutes,
      used_food) = _build_timeline(
         tour, attrs, dm, effort_min, is_trek, activities, food_pool,
+        day_date=date.fromisoformat(date_str),
     )
+    for s in stops:
+        s.update(trip_conditions.score(
+            s, date.fromisoformat(date_str),
+            weather_day or {}, interests))
+        s["why_selected"] = (
+            "Matches your interests" if s["interest_score"] > 0.5 else
+            "Suitable for this day's conditions" if s["weather_score"] >= 0.7 else
+            "Weather unavailable; check conditions" if not weather_day else
+            "Included with a weather caution")
 
     trek_count = sum(1 for s in stops if s["is_trek"])
     seen_mix: list[str] = []
@@ -1099,6 +1157,9 @@ def retime_day(day: dict, hotel: tuple[float, float],
         "total_travel_min": totals["total_travel_min"],
         "total_visit_min": totals["total_visit_min"],
         "effort_min": totals["total_visit_min"],
+        "intensity_total": sum(int(s.get("intensity") or 2) for s in stops),
+        "route_algorithm": "manual order",
+        "route_distance_source": "estimated road distance",
         "trek_count": trek_count,
         "class_mix": seen_mix,
         "overloaded": overloaded,
@@ -1208,6 +1269,11 @@ def build_itinerary(attrs, food, dest_lat, dest_lng,
                     distance_factory=None,
                     activities=None,
                     adventure_level="balanced",
+                    daily_intensity_limit=None,
+                    interests=None,
+                    avoid_crowds=False,
+                    accessibility_need="none",
+                    weather_days=None,
                     stay=None) -> dict:
     """Build the day-by-day schedule.
 
@@ -1243,10 +1309,39 @@ def build_itinerary(attrs, food, dest_lat, dest_lng,
     # Activity per stop. Anything the classifier marked "skip" is not a
     # visitor activity at all, so it leaves the pool with a reason.
     meta = activities or {}
-    resolved = {
-        a["name"]: (meta.get(a["name"]) or _neutral_activity(a["name"]))
-        for a in kept
-    }
+    resolved = {}
+    for a in kept:
+        act = meta.get(a["name"]) or _neutral_activity(a["name"])
+        sources = a.get("data_sources") or {}
+        resolved[a["name"]] = replace(
+            act,
+            intensity=(int(a["intensity"]) if sources.get("intensity") == "official_site"
+                       else act.intensity),
+            visit_min=(int(a["duration_minutes"]) if sources.get("duration_minutes") == "official_site"
+                       else act.visit_min),
+            duration_source=("official_site" if sources.get("duration_minutes") == "official_site"
+                             else act.duration_source),
+            activity_tags=(tuple(a.get("activity_tags") or ())
+                           if sources.get("activity_tags") == "official_site"
+                           else act.activity_tags or tuple(a.get("activity_tags") or ())),
+            indoor_outdoor=(a.get("indoor_outdoor")
+                            if sources.get("indoor_outdoor") == "official_site"
+                            else act.indoor_outdoor if act.indoor_outdoor != "unknown"
+                            else a.get("indoor_outdoor") or "unknown"),
+        )
+        a["intensity"] = resolved[a["name"]].intensity
+        a["duration_minutes"] = resolved[a["name"]].visit_min
+        a["activity_tags"] = list(resolved[a["name"]].activity_tags)
+        a["indoor_outdoor"] = resolved[a["name"]].indoor_outdoor
+        if sources.get("intensity") != "official_site":
+            sources["intensity"] = act.source
+        if sources.get("duration_minutes") != "official_site":
+            sources["duration_minutes"] = act.duration_source
+        if sources.get("activity_tags") != "official_site" and act.activity_tags:
+            sources["activity_tags"] = act.source
+        if sources.get("indoor_outdoor") != "official_site" and act.indoor_outdoor != "unknown":
+            sources["indoor_outdoor"] = act.source
+        a["data_sources"] = sources
     activities_all_default = all(
         act.source == "default" for act in resolved.values()
     )
@@ -1256,6 +1351,14 @@ def build_itinerary(attrs, food, dest_lat, dest_lng,
         for a in kept if not resolved[a["name"]].is_visit
     ]
     kept = [a for a in kept if resolved[a["name"]].is_visit]
+    if accessibility_need != "none":
+        allowed = ({"yes"} if accessibility_need == "wheelchair"
+                   else {"yes", "limited"})
+        inaccessible = [a for a in kept if a.get("accessibility") not in allowed]
+        kept = [a for a in kept if a.get("accessibility") in allowed]
+        unscheduled += [{"name": a["name"],
+                         "reason": "accessibility is not verified for your requirement"}
+                        for a in inaccessible]
     if not kept:
         return {"error": "nothing left to schedule after activity filtering"}
 
@@ -1278,6 +1381,9 @@ def build_itinerary(attrs, food, dest_lat, dest_lng,
 
     dm = _build_distance_matrix(kept, dest_lat, dest_lng, distance_factory)
     acts = [resolved[a["name"]] for a in kept]
+    max_intensity = daily_intensity_limit or _INTENSITY_CAP.get(pace, 8)
+    intensity = [min(5, max(1, int(a.get("intensity") or act.intensity)))
+                 for a, act in zip(kept, acts)]
 
     n = len(kept)
     target = math.ceil(n / n_days)
@@ -1290,19 +1396,36 @@ def build_itinerary(attrs, food, dest_lat, dest_lng,
 
     # Stage 3 — assignment.
     class_of = [resolved[a["name"]].cls for a in kept]
-    if n_days == 1:
-        day_members = {0: list(range(n))}
-        solver_status = "TRIVIAL"
-    else:
-        day_members, solver_status = _solve_assignment(
-            kept, n_days, target, max_load, rain_mm, dm, effort_min,
-            is_trek, max_effort_min, class_of=class_of, trek_cap=trek_cap,
-        )
+    weather_by_date = {w["date"]: w for w in (weather_days or []) if w.get("date")}
+    conditions = [[trip_conditions.score(
+        a, start_date + timedelta(days=d),
+        weather_by_date.get((start_date + timedelta(days=d)).isoformat(), {}),
+        interests,
+    ) for d in range(n_days)] for a in kept]
+    day_costs = [[(1 - c["weather_score"]) * 3 + c["risk_score"] * 2
+                  + ((c["crowd_score"] * 2) if avoid_crowds else 0)
+                  + (1 - c["interest_score"])
+                  + (1 - c["season_score"]) for c in by_day]
+                 for by_day in conditions]
+    day_members, solver_status = _solve_assignment(
+        kept, n_days, target, max_load, rain_mm, dm, effort_min,
+        is_trek, max_effort_min, class_of=class_of, trek_cap=trek_cap,
+        intensity=intensity, max_intensity=max_intensity, day_costs=day_costs,
+        day_dates=[start_date + timedelta(days=d) for d in range(n_days)],
+    )
+    assigned = {i for members in day_members.values() for i in members}
+    unscheduled += [{"name": a["name"],
+                     "reason": "daily time, travel, trek or intensity limits left no feasible day"}
+                    for i, a in enumerate(kept) if i not in assigned]
 
     # Stage 3b — day ordering.
-    if n_days > 1 and len(day_members) > 1:
+    # A day permutation can move a place onto a weekday when it is closed.
+    # Keep the solver's date assignment when any published hours apply.
+    if n_days > 1 and len(day_members) > 1 and not any(
+        a.get("opening_hours") for a in kept
+    ):
         order = _order_days_geographically(day_members, kept, dm,
-                                           rain_mm=rain_mm)
+                                           rain_mm=rain_mm, date_costs=day_costs)
         day_members = {
             new: day_members[old] for new, old in enumerate(order)
         }
@@ -1340,7 +1463,16 @@ def build_itinerary(attrs, food, dest_lat, dest_lng,
              used_food) = _build_timeline(
                 tour, kept, dm, effort_min, is_trek, acts,
                 food_pool or food_all,
+                day_date=start_date + timedelta(days=d),
             )
+            closed = next((s for s in stops if opening_hours.visit_fits(
+                s.get("opening_hours"), start_date + timedelta(days=d),
+                s["arrive_min"], s["visit_min"]) is False), None)
+            if closed:
+                tour = [i for i in tour if kept[i]["name"] != closed["name"]]
+                unscheduled.append({"name": closed["name"],
+                                    "reason": f"opening hours do not fit the visit on {date_str}"})
+                continue
             if totals["end_min"] <= _DAY_END_H * 60:
                 break
             if len(tour) <= 1 or rounds >= _MAX_REBALANCE_ROUNDS:
@@ -1368,6 +1500,16 @@ def build_itinerary(attrs, food, dest_lat, dest_lng,
             food_pool.remove(used_food)
 
         trek_count = sum(1 for s in stops if s["is_trek"])
+        day_intensity = sum(int(s.get("intensity") or 2) for s in stops)
+        for s in stops:
+            s.update(trip_conditions.score(
+                s, start_date + timedelta(days=d),
+                weather_by_date.get(date_str, {}), interests))
+            s["why_selected"] = (
+                "Matches your interests" if s["interest_score"] > 0.5 else
+                "Suitable for this day's conditions" if s["weather_score"] >= 0.7 else
+                "Weather unavailable; check conditions" if not weather_by_date.get(date_str) else
+                "Included with a weather caution")
         # Per-day activity mix, e.g. ["trek", "viewpoint", "food"] — shown in
         # the UI so the user can see the day is not all one thing.
         seen_mix: list[str] = []
@@ -1408,6 +1550,10 @@ def build_itinerary(attrs, food, dest_lat, dest_lng,
             "total_visit_min": totals["total_visit_min"],
             "effort_min": totals["total_visit_min"],
             "effort_cap_min": int(max_effort_min),
+            "intensity_total": day_intensity,
+            "intensity_cap": max_intensity,
+            "route_algorithm": "A*" if len(members) <= 8 else "nearest-neighbor + 2-opt",
+            "route_distance_source": "Ola Maps" if dm._road is not None else "estimated road distance",
             "trek_count": trek_count,
             "class_mix": seen_mix,
             "overloaded": overloaded,
@@ -1432,6 +1578,7 @@ def build_itinerary(attrs, food, dest_lat, dest_lng,
         "activity_source": "default" if activities_all_default else "llm",
         "validation": validation,
         "max_effort_min": int(max_effort_min),
+        "intensity_cap": max_intensity,
         "adventure_level": adventure_level,
         "trek_cap": trek_cap,
     }

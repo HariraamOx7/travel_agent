@@ -34,7 +34,7 @@ def _desc(code):
 def _forecast(lat: float, lng: float, start: date, end: date) -> dict:
     r = requests.get(FORECAST_URL, params={
         "latitude": lat, "longitude": lng,
-        "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode",
+        "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,uv_index_max,weather_code",
         "start_date": start.isoformat(), "end_date": end.isoformat(),
         "timezone": "auto"}, timeout=15)
     r.raise_for_status()
@@ -43,7 +43,10 @@ def _forecast(lat: float, lng: float, start: date, end: date) -> dict:
              "t_max": d["temperature_2m_max"][i],
              "t_min": d["temperature_2m_min"][i],
              "precip_mm": d["precipitation_sum"][i],
-             "sky": _desc(d["weathercode"][i])}
+             "rain_probability": d["precipitation_probability_max"][i],
+             "wind_kmh": d["wind_speed_10m_max"][i],
+             "uv_index": d["uv_index_max"][i],
+             "sky": _desc(d["weather_code"][i])}
             for i in range(len(d["time"]))]
     return {"mode": "live forecast", "days": days}
 

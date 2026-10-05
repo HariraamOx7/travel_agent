@@ -37,6 +37,9 @@ class TripState(BaseModel):
     travellers: int = 1
     interests: List[str] = Field(default_factory=list)
     pace: str = "balanced"          # relaxed | balanced | packed
+    daily_intensity_limit: Optional[int] = None  # 1..20; default derived from pace
+    avoid_crowds: bool = False
+    accessibility_need: str = "none"  # none | limited_mobility | wheelchair
     # How trek-heavy the trip should be: low (~1 trek per 3 days),
     # balanced (~1 per 2), high (up to one per day). Drives the trek cap
     # in the scheduler, so a 'balanced' trip stays a MIX of activities
